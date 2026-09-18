@@ -29,6 +29,13 @@ import { OnlineLobbyModal } from './components/OnlineLobbyModal';
 import { GameOverModal } from './components/GameOverModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import {
+  initTelegramWebApp,
+  isTelegramWebApp,
+  getTelegramUser,
+  getTelegramStartParam,
+  triggerTelegramHaptic,
+} from './utils/telegram';
 
 export default function App() {
   // Game State
@@ -51,6 +58,7 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
   const [showOnlineLobby, setShowOnlineLobby] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+  const [isTelegram, setIsTelegram] = useState(false);
 
   // Timer reference for match duration
   const matchStartTime = useRef(Date.now());
@@ -70,10 +78,17 @@ export default function App() {
   } = useWebRTCGame({
     playerName: profile.name,
     onRemoteMove: (remoteMove, nextState) => {
-      // Play sound according to remote move
-      if (remoteMove.type === 'jump') sound.playAttack();
-      else if (remoteMove.type === 'place') sound.playPlace();
-      else sound.playMove();
+      // Play sound and haptics according to remote move
+      if (remoteMove.type === 'jump') {
+        sound.playAttack();
+        triggerTelegramHaptic('heavy');
+      } else if (remoteMove.type === 'place') {
+        sound.playPlace();
+        triggerTelegramHaptic('light');
+      } else {
+        sound.playMove();
+        triggerTelegramHaptic('medium');
+      }
 
       setGameState(nextState);
       setSelectedPos(null);
@@ -85,6 +100,29 @@ export default function App() {
       alert('Your online opponent disconnected.');
     },
   });
+
+  // Telegram Mini App Initialization & deep link detection
+  useEffect(() => {
+    initTelegramWebApp();
+    const inTg = isTelegramWebApp();
+    setIsTelegram(inTg);
+
+    if (inTg) {
+      const tgUser = getTelegramUser();
+      if (tgUser && (profile.name === 'Baghchal Champion' || !profile.name)) {
+        const updated = { ...profile, name: tgUser.name };
+        setProfile(updated);
+        savePlayerProfile(updated);
+      }
+    }
+
+    // Auto-join custom room if opened via Telegram deep-link
+    const deepRoom = getTelegramStartParam();
+    if (deepRoom) {
+      setMode('online');
+      joinCustomRoom(deepRoom, false);
+    }
+  }, []);
 
   // Calculate current trapped tigers
   const trappedInfo = getTrappedTigersInfo(gameState.board);
@@ -162,8 +200,13 @@ export default function App() {
         userWon = true;
       }
 
-      if (userWon) sound.playVictory();
-      else sound.playDefeat();
+      if (userWon) {
+        sound.playVictory();
+        triggerTelegramHaptic('success');
+      } else {
+        sound.playDefeat();
+        triggerTelegramHaptic('error');
+      }
 
       // Record profile statistics
       const durationSeconds = Math.max(1, Math.round((Date.now() - matchStartTime.current) / 1000));
@@ -214,23 +257,27 @@ export default function App() {
 
   // Execute a verified Move
   const executeMove = (move: Move) => {
-    // Sound effect
+    // Sound effect and Telegram Haptic Feedback
     if (move.type === 'jump') {
       sound.playAttack();
+      triggerTelegramHaptic('heavy');
     } else if (move.type === 'place') {
       sound.playPlace();
+      triggerTelegramHaptic('light');
     } else {
       sound.playMove();
+      triggerTelegramHaptic('medium');
     }
 
     setHistoryStack((prev) => [...prev, gameState]);
     const nextState = applyMove(gameState, move);
 
-    // Check if tiger became trapped for sound
+    // Check if tiger became trapped for sound & haptic
     const beforeTrapped = trappedInfo.trappedCount;
     const afterTrapped = getTrappedTigersInfo(nextState.board).trappedCount;
     if (afterTrapped > beforeTrapped) {
       sound.playTrap();
+      triggerTelegramHaptic('warning');
     }
 
     setGameState(nextState);
@@ -273,6 +320,7 @@ export default function App() {
     if (pieceAtNode === gameState.turn) {
       // Toggle selection or select new
       setSelectedPos(selectedPos === pos ? null : pos);
+      triggerTelegramHaptic('selection');
       return;
     }
 
@@ -330,9 +378,16 @@ export default function App() {
           </div>
         </div>
 
-        {/* Action Controls & PWA Install Button */}
+        {/* Action Controls & PWA / TMA Badge */}
         <div className="flex items-center gap-2">
-          <PWAInstallButton />
+          {isTelegram ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-500/20 border border-sky-400/40 text-[11px] font-semibold text-sky-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+              <span>Telegram TMA</span>
+            </div>
+          ) : (
+            <PWAInstallButton />
+          )}
         </div>
       </header>
 

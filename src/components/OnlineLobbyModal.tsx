@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Globe, Users, Copy, Check, X, RefreshCw, Radio, Sparkles } from 'lucide-react';
+import { Globe, Users, Copy, Check, X, RefreshCw, Radio, Sparkles, Share2 } from 'lucide-react';
 import { OnlineRoomInfo, PlayerRole } from '../types';
+import { shareViaTelegram } from '../utils/telegram';
 
 interface OnlineLobbyModalProps {
   isOpen: boolean;
@@ -54,6 +55,15 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
     }
   };
 
+  const handleTelegramShare = () => {
+    if (roomInfo) {
+      const code = roomInfo.roomId.replace('bc_', '').toUpperCase();
+      const text = `🐅 Play Baghchal (बाघचाल) with me on Telegram! Join room code: ${code}`;
+      const url = `${window.location.origin}?room=${roomInfo.roomId}`;
+      shareViaTelegram(text, url);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-fade-in">
       <div className="w-full max-w-md rounded-2xl border border-stone-800 bg-stone-900 p-5 shadow-2xl text-stone-200">
@@ -100,17 +110,29 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
               </div>
 
               {/* Room Code */}
-              <div className="flex items-center justify-between gap-2 pt-1">
+              <div className="bg-stone-950/60 p-2.5 rounded-lg border border-stone-800/80 space-y-2">
                 <div className="text-xs text-stone-400">
                   Room Code: <span className="font-mono font-bold text-stone-200">{roomInfo.roomId.replace('bc_', '').toUpperCase()}</span>
                 </div>
-                <button
-                  onClick={handleCopyLink}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-xs text-stone-200 transition"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'Copied' : 'Copy Code'}</span>
-                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyLink}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-semibold text-stone-200 transition"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copied ? 'Code Copied' : 'Copy Code'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleTelegramShare}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white transition shadow"
+                    title="Send game invite to Telegram chat or channel"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Telegram Invite</span>
+                  </button>
+                </div>
               </div>
 
               <button
