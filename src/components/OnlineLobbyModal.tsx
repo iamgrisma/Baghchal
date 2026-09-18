@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Globe, Users, Copy, Check, X, RefreshCw, Radio, Sparkles, Share2 } from 'lucide-react';
-import { OnlineRoomInfo, PlayerRole } from '../types';
+import { Globe, Users, Copy, Check, X, RefreshCw, Sparkles, Share2, LogOut } from 'lucide-react';
+import { OnlineRoomInfo } from '../types';
 import { shareViaTelegram } from '../utils/telegram';
 
 interface OnlineLobbyModalProps {
@@ -13,6 +13,7 @@ interface OnlineLobbyModalProps {
   onStartAutoMatch: (role: 'any' | 'tiger' | 'goat') => void;
   onCancelAutoMatch: () => void;
   onJoinCustomRoom: (roomId: string, asHost: boolean) => void;
+  onLeaveRoom: () => void;
 }
 
 export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
@@ -25,6 +26,7 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
   onStartAutoMatch,
   onCancelAutoMatch,
   onJoinCustomRoom,
+  onLeaveRoom,
 }) => {
   const [preferredRole, setPreferredRole] = useState<'any' | 'tiger' | 'goat'>('any');
   const [customRoomInput, setCustomRoomInput] = useState('');
@@ -65,9 +67,8 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md rounded-2xl border border-stone-800 bg-stone-900 p-5 shadow-2xl text-stone-200">
-        
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4 backdrop-blur-sm animate-fade-in">
+      <div className="w-full max-w-md rounded-2xl border border-stone-800 bg-stone-900 p-4 sm:p-5 shadow-2xl text-stone-200">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-stone-800">
           <div className="flex items-center gap-2">
@@ -84,36 +85,62 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
 
         {/* Content Body */}
         <div className="mt-4 space-y-4">
-          
-          {/* Active Room Connection Status (if in room) */}
+          {/* Active Room Connection Status */}
           {roomInfo ? (
             <div className="rounded-xl border border-amber-600/40 bg-amber-950/20 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
-                  Connected Match
+                  {roomInfo.connected ? 'Match in Progress' : 'Room Created'}
                 </span>
-                <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                  {roomInfo.usingP2P ? 'Direct WebRTC (P2P)' : 'Live KV Sync'}
+                <span
+                  className={`flex items-center gap-1.5 text-xs font-medium ${
+                    roomInfo.connected ? 'text-emerald-400' : 'text-amber-400'
+                  }`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      roomInfo.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400 animate-ping'
+                    }`}
+                  />
+                  {roomInfo.connected
+                    ? roomInfo.usingP2P
+                      ? 'Direct P2P (WebRTC)'
+                      : 'Live Edge Sync'
+                    : 'Waiting for Opponent'}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between bg-stone-950/80 p-2.5 rounded-lg border border-stone-800">
+              {/* Players Status Box */}
+              <div className="flex items-center justify-between bg-stone-950/80 p-3 rounded-lg border border-stone-800">
                 <div>
-                  <div className="text-xs text-stone-400">Opponent</div>
-                  <div className="text-sm font-bold text-stone-100">{roomInfo.opponentName}</div>
+                  <div className="text-[11px] text-stone-400">Opponent</div>
+                  <div className="text-sm font-bold text-stone-100 flex items-center gap-1.5">
+                    <span>{roomInfo.myRole === 'goat' ? '🐅' : '🐐'}</span>
+                    <span>{roomInfo.opponentName}</span>
+                  </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xs text-stone-400">Your Role</div>
-                  <div className="text-sm font-bold text-amber-400 capitalize">{roomInfo.myRole}</div>
+                  <div className="text-[11px] text-stone-400">Your Role</div>
+                  <div className="text-sm font-bold text-amber-400 flex items-center justify-end gap-1.5 capitalize">
+                    <span>{roomInfo.myRole === 'goat' ? '🐐 Goat' : '🐅 Tiger'}</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Room Code */}
-              <div className="bg-stone-950/60 p-2.5 rounded-lg border border-stone-800/80 space-y-2">
-                <div className="text-xs text-stone-400">
-                  Room Code: <span className="font-mono font-bold text-stone-200">{roomInfo.roomId.replace('bc_', '').toUpperCase()}</span>
+              {/* Room Code & Share Box */}
+              <div className="bg-stone-950/60 p-3 rounded-lg border border-stone-800/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-stone-400">Room Code:</span>
+                  <span className="font-mono text-sm font-black text-amber-300 tracking-wider bg-stone-900 px-2.5 py-0.5 rounded border border-stone-700">
+                    {roomInfo.roomId.replace('bc_', '').toUpperCase()}
+                  </span>
                 </div>
+
+                {!roomInfo.connected && (
+                  <p className="text-[11px] text-amber-300/90 leading-tight">
+                    Share this code or invite link with a friend on Telegram. The match will automatically start when they join!
+                  </p>
+                )}
 
                 <div className="flex items-center gap-2">
                   <button
@@ -121,7 +148,7 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                     className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-semibold text-stone-200 transition"
                   >
                     {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copied ? 'Code Copied' : 'Copy Code'}</span>
+                    <span>{copied ? 'Copied' : 'Copy Code'}</span>
                   </button>
 
                   <button
@@ -135,12 +162,22 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                 </div>
               </div>
 
-              <button
-                onClick={onClose}
-                className="w-full py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-sm font-bold shadow transition"
-              >
-                Return to Game
-              </button>
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={onLeaveRoom}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-red-800/60 bg-red-950/40 hover:bg-red-900/50 text-red-300 text-xs font-semibold transition"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Leave Room</span>
+                </button>
+                <button
+                  onClick={onClose}
+                  className="flex-1 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-xs font-bold shadow transition"
+                >
+                  Return to Game
+                </button>
+              </div>
             </div>
           ) : isSearching ? (
             /* Matchmaking in Progress */
@@ -169,7 +206,7 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                     <Sparkles className="w-4 h-4 text-amber-400" />
                     <span>Quick Auto-Match</span>
                   </div>
-                  <span className="text-[11px] text-stone-400">Low-latency WebRTC</span>
+                  <span className="text-[11px] text-emerald-400 font-medium">Free Global Queue</span>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -181,7 +218,7 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                         onClick={() => setPreferredRole(r)}
                         className={`px-2.5 py-1 rounded capitalize font-medium transition ${
                           preferredRole === r
-                            ? 'bg-amber-600 text-stone-950'
+                            ? 'bg-amber-600 text-stone-950 font-bold'
                             : 'text-stone-400 hover:text-stone-200'
                         }`}
                       >
@@ -207,21 +244,21 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                   Play with a Friend
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     onClick={handleCreateRoom}
-                    className="py-2 px-3 rounded-lg border border-stone-700 bg-stone-900 hover:bg-stone-800 text-xs font-semibold text-stone-200 transition"
+                    className="py-2.5 px-3 rounded-lg border border-amber-600/30 bg-stone-900 hover:bg-stone-800 text-xs font-bold text-amber-300 transition"
                   >
-                    Create Private Room
+                    + Create Private Room
                   </button>
 
                   <form onSubmit={handleJoinRoom} className="flex gap-1">
                     <input
                       type="text"
-                      placeholder="Code (e.g. 7A8B9)"
+                      placeholder="Room code (e.g. 7A8B9)"
                       value={customRoomInput}
                       onChange={(e) => setCustomRoomInput(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-stone-800 bg-stone-950 text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:border-amber-600"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-stone-800 bg-stone-950 text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:border-amber-600 uppercase"
                     />
                     <button
                       type="submit"
@@ -237,7 +274,7 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
           )}
 
           <div className="text-[11px] text-stone-500 text-center leading-relaxed">
-            Direct peer-to-peer connection with real-time state synchronization. Works on all modern mobile and desktop browsers.
+            Real-time peer-to-peer connection with Cloudflare Edge synchronization. Zero registration required.
           </div>
         </div>
       </div>

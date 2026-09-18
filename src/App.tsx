@@ -38,6 +38,7 @@ import {
   HelpCircle,
   Trophy,
   Globe,
+  LogOut,
 } from 'lucide-react';
 import {
   initTelegramWebApp,
@@ -86,11 +87,13 @@ export default function App() {
     roomInfo,
     isSearching,
     matchStatusText,
+    dataChannelOpen,
     startAutoMatch,
     cancelAutoMatch,
     joinCustomRoom,
     sendMove,
     sendRestart,
+    cleanupConnection,
   } = useWebRTCGame({
     playerName: profile.name,
     onRemoteMove: (remoteMove, nextState) => {
@@ -136,10 +139,56 @@ export default function App() {
     const deepRoom = getTelegramStartParam();
     if (deepRoom) {
       setMode('online');
+      resetGame();
       joinCustomRoom(deepRoom, false);
       setCurrentScreen('play');
     }
   }, []);
+
+  // Online connection transition: automatically close lobby modal and play start chime when opponent joins
+  const prevConnectedRef = useRef(false);
+  useEffect(() => {
+    if (roomInfo?.connected && !prevConnectedRef.current) {
+      sound.playGameStart();
+      triggerTelegramHaptic('success');
+      setShowOnlineLobby(false);
+    }
+    prevConnectedRef.current = !!roomInfo?.connected;
+  }, [roomInfo?.connected]);
+
+  // Online matchmaking / room handlers
+  const handleStartAutoMatch = (role: 'any' | 'tiger' | 'goat') => {
+    setMode('online');
+    resetGame();
+    startAutoMatch(role);
+  };
+
+  const handleJoinCustomRoom = (roomId: string, asHost: boolean) => {
+    setMode('online');
+    resetGame();
+    joinCustomRoom(roomId, asHost);
+  };
+
+  const handleCancelAutoMatch = () => {
+    cancelAutoMatch();
+    setMode('ai');
+  };
+
+  const handleLeaveOnlineRoom = () => {
+    cleanupConnection();
+    setMode('ai');
+    resetGame();
+    setShowOnlineLobby(false);
+  };
+
+  // Determine roles for display and interaction
+  const userRole: PlayerRole =
+    mode === 'online' && roomInfo
+      ? roomInfo.myRole
+      : mode === 'ai'
+      ? aiUserRole
+      : 'goat';
+  const opponentRole: PlayerRole = userRole === 'goat' ? 'tiger' : 'goat';
 
   // Calculate current trapped tigers
   const trappedInfo = getTrappedTigersInfo(gameState.board);
@@ -153,7 +202,7 @@ export default function App() {
       return gameState.turn === aiUserRole;
     }
     if (mode === 'online') {
-      if (!roomInfo) return false;
+      if (!roomInfo || !roomInfo.connected) return false;
       return gameState.turn === roomInfo.myRole;
     }
     return false;
@@ -207,8 +256,6 @@ export default function App() {
       const isTigerWon = gameState.status === 'tiger_won';
       const isGoatWon = gameState.status === 'goat_won';
 
-      // Play specific thematic victory sounds:
-      // "On final trap i.e if goat wins a march sound of goats myaa myaa twice (but all 20 myaa together😅)"
       if (isGoatWon) {
         sound.playGoatMarchVictory();
       } else if (isTigerWon) {
@@ -333,7 +380,7 @@ export default function App() {
     setGameState(nextState);
     setSelectedPos(null);
 
-    // If online, broadcast to remote peer via WebRTC / KV
+    // If online, broadcast to remote peer via WebRTC / Cloudflare Edge
     if (mode === 'online') {
       sendMove(move, nextState);
     }
@@ -460,6 +507,9 @@ export default function App() {
           difficulty={difficulty}
           profile={profile}
           onSelectMode={(newMode) => {
+            if (mode === 'online' && newMode !== 'online') {
+              cleanupConnection();
+            }
             setMode(newMode);
             resetGame();
           }}
@@ -510,9 +560,10 @@ export default function App() {
           matchStatusText={matchStatusText}
           roomInfo={roomInfo}
           onClose={() => setShowOnlineLobby(false)}
-          onStartAutoMatch={(pref) => startAutoMatch(pref)}
-          onCancelAutoMatch={cancelAutoMatch}
-          onJoinCustomRoom={(roomId, asHost) => joinCustomRoom(roomId, asHost)}
+          onStartAutoMatch={handleStartAutoMatch}
+          onCancelAutoMatch={handleCancelAutoMatch}
+          onJoinCustomRoom={handleJoinCustomRoom}
+          onLeaveRoom={handleLeaveOnlineRoom}
         />
         <OfflineIndicator />
       </>
@@ -525,13 +576,13 @@ export default function App() {
       className="fixed inset-0 w-full h-full h-[100dvh] max-h-[100dvh] bg-stone-950 text-stone-100 flex flex-col justify-between overflow-hidden select-none touch-none px-2 py-1 xs:py-1.5"
       style={{ height: '100dvh', maxHeight: '100dvh' }}
     >
-      {/* 1. TOP GAME HUD: Opponent / Tiger Status & Quick Controls */}
+      {/* 1. TOP GAME HUD: Opponent Status & Quick Controls */}
       <header className="w-full max-w-lg mx-auto flex items-center justify-between gap-1.5 px-1 py-1 shrink-0">
-        {/* Opponent / Tiger Player Badge */}
+        {/* Opponent Player Badge */}
         <div className="flex items-center gap-1.5 bg-stone-900/90 border border-stone-800/90 rounded-xl px-2.5 py-1 shadow-sm">
           <div className="text-base relative">
-            🐅
-            {gameState.turn === 'tiger' && (
+            {opponentRole === 'tiger' ? '🐅' : '🐐'}
+            {gameState.turn === opponentRole && (
               <span className="absolute -top-1 -right-1 flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
@@ -544,24 +595,33 @@ export default function App() {
                 ? `AI (${difficulty === 'adaptive' ? getAdaptiveAIDetails(profile).tierLabel : difficulty})`
                 : mode === 'online' && roomInfo
                 ? roomInfo.opponentName
-                : 'Tiger Player'}
+                : opponentRole === 'tiger'
+                ? 'Tiger Player'
+                : 'Goat Player'}
             </span>
-            <div className="flex items-center gap-1 text-[9px] text-amber-400 font-medium">
-              <span>Trapped:</span>
-              <strong className="font-mono text-stone-100">{trappedInfo.trappedCount}/4</strong>
-              <div className="flex items-center gap-0.5 ml-0.5">
-                {[0, 1, 2, 3].map((slot) => (
-                  <span
-                    key={`trap-pip-${slot}`}
-                    className={`w-1.5 h-1.5 rounded-full transition-all ${
-                      slot < trappedInfo.trappedCount
-                        ? 'bg-emerald-400 shadow-sm shadow-emerald-400/80 ring-1 ring-emerald-300'
-                        : 'bg-stone-800 border border-stone-700'
-                    }`}
-                  />
-                ))}
+            {opponentRole === 'tiger' ? (
+              <div className="flex items-center gap-1 text-[9px] text-amber-400 font-medium">
+                <span>Trapped:</span>
+                <strong className="font-mono text-stone-100">{trappedInfo.trappedCount}/4</strong>
+                <div className="flex items-center gap-0.5 ml-0.5">
+                  {[0, 1, 2, 3].map((slot) => (
+                    <span
+                      key={`opp-trap-pip-${slot}`}
+                      className={`w-1.5 h-1.5 rounded-full transition-all ${
+                        slot < trappedInfo.trappedCount
+                          ? 'bg-emerald-400 shadow-sm shadow-emerald-400/80 ring-1 ring-emerald-300'
+                          : 'bg-stone-800 border border-stone-700'
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center gap-2 text-[9px] text-stone-400 font-medium">
+                <span>Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong></span>
+                <span>Eaten: <strong className="font-mono text-red-400">{gameState.goatsCaptured}/5</strong></span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -571,24 +631,50 @@ export default function App() {
             <span className="px-3 py-1 rounded-full text-[11px] font-black bg-amber-500 text-stone-950 shadow">
               {gameState.status === 'goat_won' ? 'Goats Won! 🏆' : 'Tigers Won! 🏆'}
             </span>
+          ) : mode === 'online' && roomInfo && !roomInfo.connected ? (
+            <button
+              onClick={() => setShowOnlineLobby(true)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+              <span>Waiting for Opponent</span>
+            </button>
           ) : isAiThinking ? (
             <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
               <span>Thinking...</span>
             </span>
-          ) : gameState.turn === 'goat' ? (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-200 text-slate-900 ring-2 ring-slate-400/50 shadow-sm">
-              <span>🐐 Your Turn</span>
+          ) : isUserTurn() ? (
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-emerald-500 text-stone-950 ring-2 ring-emerald-400/50 shadow-sm">
+              <span>{userRole === 'goat' ? '🐐 Your Turn' : '🐅 Your Turn'}</span>
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 ring-2 ring-amber-400/50 shadow-sm">
-              <span>🐅 Tiger's Turn</span>
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-stone-900 text-stone-300 border border-stone-800 shadow-sm">
+              <span>{opponentRole === 'goat' ? '🐐' : '🐅'} {mode === 'online' && roomInfo ? roomInfo.opponentName : 'Opponent'}'s Turn</span>
             </span>
           )}
         </div>
 
-        {/* Right: Quick Action Icons */}
+        {/* Right: Quick Action Icons & Online Room Badge */}
         <div className="flex items-center gap-1">
+          {mode === 'online' && roomInfo && (
+            <button
+              onClick={() => setShowOnlineLobby(true)}
+              className="px-2 py-1 rounded-lg bg-stone-900 hover:bg-stone-800 text-[10px] font-mono font-bold text-amber-300 border border-stone-800 flex items-center gap-1 transition"
+              title="View room code / invite link"
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  roomInfo.connected
+                    ? roomInfo.usingP2P
+                      ? 'bg-emerald-400 animate-pulse'
+                      : 'bg-sky-400'
+                    : 'bg-amber-400 animate-ping'
+                }`}
+              />
+              <span>{roomInfo.roomId.replace('bc_', '').toUpperCase()}</span>
+            </button>
+          )}
           <button
             onClick={handleToggleSound}
             className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 text-xs transition active:scale-95"
@@ -635,12 +721,22 @@ export default function App() {
         <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-stone-900/90 border border-stone-800/80 text-[11px] font-medium text-amber-300 shadow-sm">
           {gameState.status !== 'playing' ? (
             <span>Match finished! Tap "Play Again" or "Reset".</span>
-          ) : gameState.phase === 'placement' && gameState.turn === 'goat' ? (
-            <span>Tap empty spot to place Goat ({gameState.goatsInReserve} in reserve)</span>
-          ) : gameState.turn === 'goat' ? (
-            selectedPos === null ? <span>Select a Goat to move</span> : <span>Tap adjacent empty spot to move</span>
+          ) : mode === 'online' && roomInfo && !roomInfo.connected ? (
+            <span>
+              Room Code: <strong className="text-amber-200">{roomInfo.roomId.replace('bc_', '').toUpperCase()}</strong> • Share code with a friend to play!
+            </span>
+          ) : mode === 'online' && !isUserTurn() ? (
+            <span>Waiting for {roomInfo?.opponentName || 'opponent'} to move...</span>
           ) : isAiThinking ? (
             <span>Tiger is calculating optimal tactical move...</span>
+          ) : userRole === 'goat' ? (
+            gameState.phase === 'placement' ? (
+              <span>Tap empty spot to place Goat ({gameState.goatsInReserve} in reserve)</span>
+            ) : selectedPos === null ? (
+              <span>Select a Goat to move</span>
+            ) : (
+              <span>Tap adjacent empty spot to move</span>
+            )
           ) : selectedPos === null ? (
             <span>Select a Tiger to move or jump capture</span>
           ) : (
@@ -651,55 +747,85 @@ export default function App() {
 
       {/* 4. BOTTOM PLAYER STATS & ACTION CONTROLS */}
       <footer className="w-full max-w-lg mx-auto flex flex-col gap-1.5 shrink-0 px-1 pb-1">
-        {/* Goat Player Row */}
+        {/* User Player Row */}
         <div className="flex items-center justify-between bg-stone-900/90 border border-stone-800/80 rounded-xl px-2.5 py-1 text-xs shadow-sm">
           <div className="flex items-center gap-1.5">
-            <span className="text-base">🐐</span>
+            <span className="text-base">{userRole === 'goat' ? '🐐' : '🐅'}</span>
             <span className="font-bold text-stone-200">
-              {profile.name || 'You (Goats)'}
+              {profile.name || 'You'} {userRole === 'goat' ? '(Goats)' : '(Tigers)'}
             </span>
           </div>
-          <div className="flex items-center gap-3 text-[11px]">
-            <span className="text-stone-300">
-              Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong>
-            </span>
-            <div className="flex items-center gap-1">
-              <span className="text-stone-300">Eaten:</span>
-              <strong className="font-mono text-red-400 mr-1">{gameState.goatsCaptured}/5</strong>
-              <div className="flex items-center gap-0.5">
-                {[0, 1, 2, 3, 4].map((slot) => (
+          {userRole === 'goat' ? (
+            <div className="flex items-center gap-3 text-[11px]">
+              <span className="text-stone-300">
+                Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong>
+              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-stone-300">Eaten:</span>
+                <strong className="font-mono text-red-400 mr-1">{gameState.goatsCaptured}/5</strong>
+                <div className="flex items-center gap-0.5">
+                  {[0, 1, 2, 3, 4].map((slot) => (
+                    <span
+                      key={`user-eaten-pip-${slot}`}
+                      className={`w-1.5 h-1.5 rounded-full transition-all ${
+                        slot < gameState.goatsCaptured
+                          ? 'bg-red-500 shadow-sm shadow-red-500/80 ring-1 ring-red-400'
+                          : 'bg-stone-800 border border-stone-700'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="text-stone-300">Trapped:</span>
+              <strong className="font-mono text-amber-400">{trappedInfo.trappedCount}/4</strong>
+              <div className="flex items-center gap-0.5 ml-0.5">
+                {[0, 1, 2, 3].map((slot) => (
                   <span
-                    key={`eaten-pip-${slot}`}
+                    key={`user-trap-pip-${slot}`}
                     className={`w-1.5 h-1.5 rounded-full transition-all ${
-                      slot < gameState.goatsCaptured
-                        ? 'bg-red-500 shadow-sm shadow-red-500/80 ring-1 ring-red-400'
+                      slot < trappedInfo.trappedCount
+                        ? 'bg-emerald-400 shadow-sm shadow-emerald-400/80 ring-1 ring-emerald-300'
                         : 'bg-stone-800 border border-stone-700'
                     }`}
                   />
                 ))}
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Action Button Deck: Large thumb-friendly arcade buttons */}
         <div className="grid grid-cols-4 gap-1.5">
-          {/* Undo */}
-          <button
-            onClick={handleUndo}
-            disabled={historyStack.length === 0 || mode === 'online' || isAiThinking}
-            className={`flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-xs font-bold transition ${
-              historyStack.length === 0 || mode === 'online' || isAiThinking
-                ? 'bg-stone-900/40 text-stone-600 border border-stone-900 cursor-not-allowed'
-                : 'bg-stone-850 hover:bg-stone-800 text-stone-200 border border-stone-700 active:scale-95 shadow'
-            }`}
-            title="Undo last move"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Undo</span>
-          </button>
+          {/* Button 1: Undo or Leave (in online mode) */}
+          {mode === 'online' ? (
+            <button
+              onClick={handleLeaveOnlineRoom}
+              className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-red-950/40 hover:bg-red-900/50 text-red-300 border border-red-800/60 text-xs font-bold transition active:scale-95 shadow"
+              title="Leave online room"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Leave</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleUndo}
+              disabled={historyStack.length === 0 || isAiThinking}
+              className={`flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-xs font-bold transition ${
+                historyStack.length === 0 || isAiThinking
+                  ? 'bg-stone-900/40 text-stone-600 border border-stone-900 cursor-not-allowed'
+                  : 'bg-stone-850 hover:bg-stone-800 text-stone-200 border border-stone-700 active:scale-95 shadow'
+              }`}
+              title="Undo last move"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Undo</span>
+            </button>
+          )}
 
-          {/* Restart */}
+          {/* Button 2: Restart / Reset */}
           <button
             onClick={() => {
               resetGame();
@@ -712,7 +838,7 @@ export default function App() {
             <span>Reset</span>
           </button>
 
-          {/* Mode / Setup */}
+          {/* Button 3: Mode / Setup */}
           <button
             onClick={() => setShowSetupModal(true)}
             className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-xs font-black transition active:scale-95 shadow"
@@ -721,14 +847,20 @@ export default function App() {
             <span>🎮 Mode</span>
           </button>
 
-          {/* Online Lobby */}
+          {/* Button 4: Online Lobby */}
           <button
             onClick={() => setShowOnlineLobby(true)}
-            className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition active:scale-95 shadow"
+            className={`flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-xs font-bold transition active:scale-95 shadow ${
+              mode === 'online'
+                ? roomInfo?.connected
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                  : 'bg-amber-600 hover:bg-amber-500 text-stone-950'
+                : 'bg-sky-600 hover:bg-sky-500 text-white'
+            }`}
             title="Online Multiplayer with Friends"
           >
             <Globe className="w-3.5 h-3.5" />
-            <span>Online</span>
+            <span>{mode === 'online' ? (roomInfo?.connected ? 'Room' : 'Invite') : 'Online'}</span>
           </button>
         </div>
       </footer>
@@ -743,6 +875,9 @@ export default function App() {
               difficulty={difficulty}
               profile={profile}
               onSelectMode={(newMode) => {
+                if (mode === 'online' && newMode !== 'online') {
+                  cleanupConnection();
+                }
                 setMode(newMode);
                 resetGame();
               }}
@@ -802,9 +937,10 @@ export default function App() {
         matchStatusText={matchStatusText}
         roomInfo={roomInfo}
         onClose={() => setShowOnlineLobby(false)}
-        onStartAutoMatch={(pref) => startAutoMatch(pref)}
-        onCancelAutoMatch={cancelAutoMatch}
-        onJoinCustomRoom={(roomId, asHost) => joinCustomRoom(roomId, asHost)}
+        onStartAutoMatch={handleStartAutoMatch}
+        onCancelAutoMatch={handleCancelAutoMatch}
+        onJoinCustomRoom={handleJoinCustomRoom}
+        onLeaveRoom={handleLeaveOnlineRoom}
       />
 
       <GameOverModal

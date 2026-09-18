@@ -24,10 +24,74 @@ const CORS_HEADERS = {
 };
 
 const QUEUE_KEY = 'matchmaking:active_queue';
-const inMemoryQueue: WaitingPlayer[] = [];
+const memoryQueue: WaitingPlayer[] = [];
 
 function getKV(env: Env): KVNamespace | null {
   return env.baghchal_kv || env.BAGHCHAL_KV || env.KV || null;
+}
+
+async function getQueue(env: Env): Promise<WaitingPlayer[]> {
+  const kv = getKV(env);
+  if (kv) {
+    try {
+      const raw = await kv.get(QUEUE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+  }
+
+  try {
+    const cache = caches.default;
+    const cacheUrl = new URL(`https://internal-cache.baghchal.local/matchmaking/queue`);
+    const match = await cache.match(cacheUrl);
+    if (match) return await match.json();
+  } catch (e) {}
+
+  return [...memoryQueue];
+}
+
+async function saveQueue(queue: WaitingPlayer[], env: Env): Promise<void> {
+  memoryQueue.length = 0;
+  memoryQueue.push(...queue);
+
+  const kv = getKV(env);
+  if (kv) {
+    try {
+      await kv.put(QUEUE_KEY, JSON.stringify(queue), { expirationTtl: 120 });
+    } catch (e) {}
+  }
+
+  try {
+    const cache = caches.default;
+    const cacheUrl = new URL(`https://internal-cache.baghchal.local/matchmaking/queue`);
+    const response = new Response(JSON.stringify(queue), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=120',
+      },
+    });
+    await cache.put(cacheUrl, response);
+  } catch (e) {}
+}
+
+async function saveInitialRoom(roomId: string, room: any, env: Env): Promise<void> {
+  const kv = getKV(env);
+  if (kv) {
+    try {
+      await kv.put(`room:${roomId}`, JSON.stringify(room), { expirationTtl: 7200 });
+    } catch (e) {}
+  }
+
+  try {
+    const cache = caches.default;
+    const cacheUrl = new URL(`https://internal-cache.baghchal.local/room/${encodeURIComponent(roomId)}`);
+    const response = new Response(JSON.stringify(room), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=7200',
+      },
+    });
+    await cache.put(cacheUrl, response);
+  } catch (e) {}
 }
 
 export const onRequestOptions: PagesFunction<Env> = async () => {
@@ -56,23 +120,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     });
   }
 
-  const kv = getKV(context.env);
   const now = Date.now();
+  let queue = await getQueue(context.env);
 
-  let queue: WaitingPlayer[] = [];
-  if (kv) {
-    try {
-      const raw = await kv.get(QUEUE_KEY);
-      if (raw) queue = JSON.parse(raw);
-    } catch (e) {}
-  } else {
-    queue = [...inMemoryQueue];
-  }
-
-  // Filter out expired items (> 45s) or own stale items
+  // Filter out expired (> 45s)
   queue = queue.filter((p) => now - p.joinedAt < 45000);
 
-  // Find an opponent waiting in queue (not self, and not already matched)
+  // Find waiting opponent
   const waitingIndex = queue.findIndex(
     (p) => p.playerId !== playerId && !p.matchedRoomId
   );
@@ -81,7 +135,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const opponent = queue[waitingIndex];
     const roomId = `room_${Math.random().toString(36).substring(2, 9)}`;
 
-    // Determine roles
     let hostRole: 'tiger' | 'goat';
     let guestRole: 'tiger' | 'goat';
 
@@ -97,13 +150,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       guestRole = rand ? 'tiger' : 'goat';
     }
 
-    // Mark opponent as matched
     opponent.matchedRoomId = roomId;
     opponent.matchedRole = hostRole;
     opponent.opponentName = playerName;
     opponent.isInitiator = true;
 
-    // Create room in KV
     const initialRoom = {
       roomId,
       candidatesHost: [],
@@ -117,16 +168,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       lastActive: now,
     };
 
-    if (kv) {
-      try {
-        await Promise.all([
-          kv.put(`room:${roomId}`, JSON.stringify(initialRoom), { expirationTtl: 7200 }),
-          kv.put(QUEUE_KEY, JSON.stringify(queue), { expirationTtl: 120 }),
-        ]);
-      } catch (e) {
-        console.error('KV matchmaking save error:', e);
-      }
-    }
+    await Promise.all([
+      saveInitialRoom(roomId, initialRoom, context.env),
+      saveQueue(queue, context.env),
+    ]);
 
     return new Response(
       JSON.stringify({
@@ -142,7 +187,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     );
   }
 
-  // No opponent immediately available: add to queue
+  // Add to queue
   const queueId = `q_${Math.random().toString(36).substring(2, 9)}`;
   const entry: WaitingPlayer = {
     queueId,
@@ -153,14 +198,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   };
   queue.push(entry);
 
-  if (kv) {
-    try {
-      await kv.put(QUEUE_KEY, JSON.stringify(queue), { expirationTtl: 120 });
-    } catch (e) {}
-  } else {
-    inMemoryQueue.length = 0;
-    inMemoryQueue.push(...queue);
-  }
+  await saveQueue(queue, context.env);
 
   return new Response(
     JSON.stringify({
