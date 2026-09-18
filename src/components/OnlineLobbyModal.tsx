@@ -49,20 +49,26 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
 
   const handleCopyLink = () => {
     if (roomInfo) {
-      const code = roomInfo.roomId.replace('bc_', '').toUpperCase();
-      navigator.clipboard.writeText(code).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
+      const code = (roomInfo.roomId || '').replace('bc_', '').replace('room_', '').toUpperCase();
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(code).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }).catch(() => {});
+        }
+      } catch (e) {}
     }
   };
 
   const handleTelegramShare = () => {
     if (roomInfo) {
-      const code = roomInfo.roomId.replace('bc_', '').toUpperCase();
+      const code = (roomInfo.roomId || '').replace('bc_', '').replace('room_', '').toUpperCase();
       const text = `🐅 Play Baghchal (बाघचाल) with me on Telegram! Join room code: ${code}`;
       const url = `${window.location.origin}?room=${roomInfo.roomId}`;
-      shareViaTelegram(text, url);
+      try {
+        shareViaTelegram(text, url);
+      } catch (e) {}
     }
   };
 
@@ -132,7 +138,7 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-stone-400">Room Code:</span>
                   <span className="font-mono text-sm font-black text-amber-300 tracking-wider bg-stone-900 px-2.5 py-0.5 rounded border border-stone-700">
-                    {roomInfo.roomId.replace('bc_', '').toUpperCase()}
+                    {(roomInfo.roomId || '').replace('bc_', '').replace('room_', '').toUpperCase()}
                   </span>
                 </div>
 

@@ -448,6 +448,40 @@ class SoundEngine {
       osc.stop(start + 0.35);
     });
   }
+
+  /**
+   * Sound when game starts or multiplayer match connects (bright upbeat chime)
+   */
+  public playGameStart() {
+    if (this.muted) return;
+    this.init();
+    if (!this.ctx) return;
+
+    try {
+      const t = this.ctx.currentTime;
+      const notes = [329.63, 440.0, 659.25]; // E4, A4, E5 chime
+
+      notes.forEach((freq, idx) => {
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+        const start = t + idx * 0.08;
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, start);
+
+        gain.gain.setValueAtTime(0.2, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.25);
+
+        osc.connect(gain);
+        gain.connect(this.ctx!.destination);
+
+        osc.start(start);
+        osc.stop(start + 0.25);
+      });
+    } catch (e) {
+      console.warn('playGameStart error:', e);
+    }
+  }
 }
 
 export const sound = new SoundEngine();

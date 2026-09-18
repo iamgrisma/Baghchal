@@ -149,8 +149,18 @@ export default function App() {
   const prevConnectedRef = useRef(false);
   useEffect(() => {
     if (roomInfo?.connected && !prevConnectedRef.current) {
-      sound.playGameStart();
-      triggerTelegramHaptic('success');
+      try {
+        if (typeof sound.playGameStart === 'function') {
+          sound.playGameStart();
+        } else {
+          sound.playMove();
+        }
+      } catch (e) {
+        console.warn('Connect sound error:', e);
+      }
+      try {
+        triggerTelegramHaptic('success');
+      } catch (e) {}
       setShowOnlineLobby(false);
     }
     prevConnectedRef.current = !!roomInfo?.connected;
@@ -183,7 +193,7 @@ export default function App() {
 
   // Determine roles for display and interaction
   const userRole: PlayerRole =
-    mode === 'online' && roomInfo
+    mode === 'online' && roomInfo?.myRole
       ? roomInfo.myRole
       : mode === 'ai'
       ? aiUserRole
