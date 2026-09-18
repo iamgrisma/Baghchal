@@ -1,0 +1,6 @@
+{
+  "name": "Baghchal",
+  "description": "Authentic Nepali Baghchal (Tigers and Goats) traditional strategic board game with smart AI, WebRTC online multiplayer, tactile audio, and PWA support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

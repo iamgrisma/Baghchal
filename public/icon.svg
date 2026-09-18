@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2a1f18"/>
+      <stop offset="100%" stop-color="#0f0c0a"/>
+    </radialGradient>
+    <linearGradient id="brassGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a"/>
+      <stop offset="40%" stop-color="#eab308"/>
+      <stop offset="100%" stop-color="#ca8a04"/>
+    </linearGradient>
+    <linearGradient id="warmAmber" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#c2410c"/>
+    </linearGradient>
+    <filter id="subtleDrop" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="512" height="512" rx="108" fill="url(#bgGlow)"/>
+  
+  <!-- Subtle Outer Traditional Nepali Geometric Border -->
+  <rect x="24" y="24" width="464" height="464" rx="88" fill="none" stroke="url(#brassGold)" stroke-width="4" stroke-opacity="0.3"/>
+  <rect x="36" y="36" width="440" height="440" rx="76" fill="none" stroke="#d97706" stroke-width="1.5" stroke-opacity="0.4" stroke-dasharray="8 6"/>
+
+  <!-- Baghchal Board Lines motif behind emblem -->
+  <g opacity="0.15" stroke="url(#brassGold)" stroke-width="3">
+    <line x1="120" y1="120" x2="392" y2="392"/>
+    <line x1="392" y1="120" x2="120" y2="392"/>
+    <line x1="256" y1="90" x2="256" y2="422"/>
+    <line x1="90" y1="256" x2="422" y2="256"/>
+    <polygon points="256,120 392,256 256,392 120,256" fill="none"/>
+  </g>
+
+  <!-- Central Emblem: Stylized Majestic Tiger (Bagh) Face -->
+  <g filter="url(#subtleDrop)" transform="translate(0, -6)">
+    <!-- Tiger Ears -->
+    <path d="M140 180 C120 120 160 90 200 130 Z" fill="url(#warmAmber)"/>
+    <path d="M152 170 C138 132 165 110 190 140 Z" fill="#451a03"/>
+    
+    <path d="M372 180 C392 120 352 90 312 130 Z" fill="url(#warmAmber)"/>
+    <path d="M360 170 C374 132 347 110 322 140 Z" fill="#451a03"/>
+
+    <!-- Head Base -->
+    <path d="M150 200 C150 140 362 140 362 200 C380 260 360 340 256 365 C152 340 132 260 150 200 Z" fill="url(#warmAmber)"/>
+    
+    <!-- Cheeks & Muzzle (White/Cream fur accent) -->
+    <path d="M190 270 C220 270 240 285 256 305 C272 285 292 270 322 270 C345 270 355 315 330 340 C295 365 265 358 256 358 C247 358 217 365 182 340 C157 315 167 270 190 270 Z" fill="#fef3c7"/>
+
+    <!-- Tiger Stripes -->
+    <!-- Forehead Crown stripes -->
+    <path d="M256 150 L251 185 L261 185 Z" fill="#261005"/>
+    <path d="M236 160 L242 195 L232 195 Z" fill="#261005"/>
+    <path d="M276 160 L270 195 L280 195 Z" fill="#261005"/>
+    
+    <!-- Cheek Stripes -->
+    <path d="M165 230 L210 242 L205 249 L162 240 Z" fill="#261005"/>
+    <path d="M158 255 L200 264 L196 270 L156 264 Z" fill="#261005"/>
+    
+    <path d="M347 230 L302 242 L307 249 L350 240 Z" fill="#261005"/>
+    <path d="M354 255 L312 264 L316 270 L356 264 Z" fill="#261005"/>
+
+    <!-- Eyes (Glowing Piercing Amber Gold) -->
+    <polygon points="190,225 224,215 228,230 196,236" fill="#fef08a"/>
+    <ellipse cx="210" cy="225" rx="3.5" ry="8" fill="#1c1917"/>
+    <circle cx="212" cy="223" r="1.5" fill="#ffffff"/>
+
+    <polygon points="322,225 288,215 284,230 316,236" fill="#fef08a"/>
+    <ellipse cx="302" cy="225" rx="3.5" ry="8" fill="#1c1917"/>
+    <circle cx="304" cy="223" r="1.5" fill="#ffffff"/>
+
+    <!-- Nose -->
+    <polygon points="256,298 244,280 268,280" fill="#78350f" rx="3"/>
+    <line x1="256" y1="298" x2="256" y2="318" stroke="#78350f" stroke-width="3"/>
+    <path d="M238 318 C246 324 254 322 256 318 C258 322 266 324 274 318" fill="none" stroke="#78350f" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Typography at bottom: BAGHCHAL in authentic tracking -->
+  <text x="256" y="442" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="800" letter-spacing="6" fill="url(#brassGold)">
+    BAGHCHAL
+  </text>
+  <text x="256" y="468" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="500" letter-spacing="4" fill="#a8a29e">
+    TIGERS &amp; GOATS
+  </text>
+</svg>
