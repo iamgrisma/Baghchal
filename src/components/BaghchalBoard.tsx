@@ -67,7 +67,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
   }, [validMoves]);
 
   return (
-    <div className="relative w-full max-w-[min(92vw,440px)] aspect-square mx-auto touch-none select-none p-1 sm:p-2">
+    <div className="relative w-full max-w-[min(94vw,calc(100dvh-120px),520px)] aspect-square mx-auto touch-none select-none p-1 sm:p-2 flex items-center justify-center">
       {/* Board container with deep wood/brass tactile frame */}
       <div className="relative w-full h-full rounded-2xl bg-gradient-to-br from-stone-900 via-stone-925 to-stone-950 p-2 sm:p-3 shadow-2xl border-2 border-stone-800/80 ring-1 ring-amber-900/30">
         
@@ -92,6 +92,22 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             </filter>
             <filter id="pieceShadow" x="-20%" y="-20%" width="140%" height="140%">
               <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000000" floodOpacity="0.6" />
+            </filter>
+
+            {/* Neon Outglows for last put goat or last moved piece */}
+            <filter id="tigerNeonGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="0" stdDeviation="7" floodColor="#f59e0b" floodOpacity="0.95" />
+              <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#fbbf24" floodOpacity="1" />
+            </filter>
+
+            <filter id="goatNeonGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#38bdf8" floodOpacity="0.95" />
+              <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#bae6fd" floodOpacity="1" />
+            </filter>
+
+            {/* Attack Kill Move Claw Glow */}
+            <filter id="killBloodGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="0" stdDeviation="8" floodColor="#ef4444" floodOpacity="1" />
             </filter>
 
             {/* Gradients */}
@@ -222,18 +238,81 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             <line x1={SIZE - PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={PADDING} stroke="#d97706" />
           </g>
 
-          {/* Last Move Trail Indicator */}
+          {/* Last Move Trail Indicator & Killing Move Animation */}
           {lastMove && lastMove.from !== undefined && (
             <line
               x1={nodeCoords[lastMove.from].x}
               y1={nodeCoords[lastMove.from].y}
               x2={nodeCoords[lastMove.to].x}
               y2={nodeCoords[lastMove.to].y}
-              stroke="#eab308"
-              strokeWidth="3"
-              strokeDasharray="6 4"
-              strokeOpacity="0.6"
+              stroke={lastMove.type === 'jump' ? '#ef4444' : '#eab308'}
+              strokeWidth={lastMove.type === 'jump' ? '4.5' : '3'}
+              strokeDasharray={lastMove.type === 'jump' ? '8 4' : '6 4'}
+              strokeOpacity={lastMove.type === 'jump' ? '0.95' : '0.6'}
+              filter={lastMove.type === 'jump' ? 'url(#killBloodGlow)' : undefined}
             />
+          )}
+
+          {/* Killing Move Claw Slash & Shockwave Animation */}
+          {lastMove && lastMove.type === 'jump' && lastMove.captured !== undefined && (
+            <g key={`kill-anim-${lastMove.from}-${lastMove.to}-${lastMove.captured}`}>
+              {/* Expanding red shockwave circle on killed goat position */}
+              <circle
+                cx={nodeCoords[lastMove.captured].x}
+                cy={nodeCoords[lastMove.captured].y}
+                r="25"
+                fill="rgba(239, 68, 68, 0.35)"
+                stroke="#ef4444"
+                strokeWidth="3"
+                className="animate-ping"
+              />
+
+              {/* Fierce Crimson Claw Marks & Impact Flash */}
+              <g transform={`translate(${nodeCoords[lastMove.captured].x}, ${nodeCoords[lastMove.captured].y})`}>
+                <line
+                  x1="-13"
+                  y1="-15"
+                  x2="-3"
+                  y2="15"
+                  stroke="#ef4444"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  filter="url(#killBloodGlow)"
+                />
+                <line
+                  x1="-3"
+                  y1="-17"
+                  x2="7"
+                  y2="13"
+                  stroke="#dc2626"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  filter="url(#killBloodGlow)"
+                />
+                <line
+                  x1="7"
+                  y1="-14"
+                  x2="17"
+                  y2="14"
+                  stroke="#991b1b"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  filter="url(#killBloodGlow)"
+                />
+                <circle cx="0" cy="0" r="7" fill="#fecaca" className="animate-pulse" />
+                <text
+                  x="0"
+                  y="26"
+                  textAnchor="middle"
+                  fontSize="10"
+                  fontWeight="900"
+                  fill="#f87171"
+                  className="tracking-wider uppercase drop-shadow"
+                >
+                  SLASH! 💥
+                </text>
+              </g>
+            </g>
           )}
 
           {/* 3. Board Intersection Nodes & Touch Targets */}
@@ -264,18 +343,30 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                   strokeWidth="1.5"
                 />
 
-                {/* Last move marker */}
+                {/* Neon Outglow Halo Ring on Last Put Goat or Last Moved Tiger/Goat */}
                 {isLastMoveDestination && !isSelected && (
-                  <circle
-                    cx={pos.x}
-                    cy={pos.y}
-                    r="19"
-                    fill="none"
-                    stroke="#eab308"
-                    strokeWidth="1.5"
-                    strokeDasharray="4 3"
-                    className="animate-spin-slow"
-                  />
+                  <g>
+                    <circle
+                      cx={pos.x}
+                      cy={pos.y}
+                      r={piece === 'tiger' ? 27.5 : 24.5}
+                      fill="none"
+                      stroke={piece === 'tiger' ? '#f59e0b' : '#38bdf8'}
+                      strokeWidth="2.5"
+                      strokeDasharray="5 3"
+                      filter={piece === 'tiger' ? 'url(#tigerNeonGlow)' : 'url(#goatNeonGlow)'}
+                      className="animate-spin-slow"
+                    />
+                    <circle
+                      cx={pos.x}
+                      cy={pos.y}
+                      r={piece === 'tiger' ? 24 : 21.5}
+                      fill="none"
+                      stroke={piece === 'tiger' ? '#fef08a' : '#bae6fd'}
+                      strokeWidth="1.2"
+                      opacity="0.8"
+                    />
+                  </g>
                 )}
 
                 {/* Valid Move Destination Target Indicator */}
@@ -306,7 +397,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                         <circle
                           cx={pos.x}
                           cy={pos.y}
-                          r={isJumpTarget ? 20 : 16}
+                          r={isJumpTarget ? 21 : 16}
                           fill={isJumpTarget ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.25)'}
                           stroke={isJumpTarget ? '#ef4444' : '#f59e0b'}
                           strokeWidth={isJumpTarget ? 2.5 : 2}
@@ -337,7 +428,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                   </g>
                 )}
 
-                {/* Piece Rendering: Tiger or Goat */}
+                {/* Piece Rendering: Tiger (Bigger 🐯) or Goat (Bigger 🐐) with Neon Outglow */}
                 {piece && (
                   <g
                     filter={
@@ -345,85 +436,105 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                         ? 'url(#goldGlow)'
                         : isCapturedGoat
                         ? 'url(#crimsonGlow)'
+                        : isLastMoveDestination
+                        ? piece === 'tiger'
+                          ? 'url(#tigerNeonGlow)'
+                          : 'url(#goatNeonGlow)'
                         : 'url(#pieceShadow)'
                     }
                   >
-                    {/* Piece Outer Shell */}
+                    {/* Piece Outer Shell - Larger Tiger & Goat */}
                     <circle
                       cx={pos.x}
                       cy={pos.y}
-                      r="19"
+                      r={piece === 'tiger' ? 23.5 : 20.5}
                       fill={piece === 'tiger' ? 'url(#tigerGrad)' : 'url(#goatGrad)'}
                       stroke={
                         isSelected
                           ? '#fde047'
                           : isCapturedGoat
                           ? '#ef4444'
+                          : isLastMoveDestination
+                          ? piece === 'tiger'
+                            ? '#f59e0b'
+                            : '#38bdf8'
                           : piece === 'tiger'
                           ? '#78350f'
                           : '#475569'
                       }
-                      strokeWidth={isSelected ? 3 : 2}
+                      strokeWidth={isSelected ? 3.5 : isLastMoveDestination ? 3 : 2}
                       className="transition-transform duration-150"
                     />
 
-                    {/* Tiger Specific Graphics */}
+                    {/* Formidable Large Tiger Graphics 🐯 */}
                     {piece === 'tiger' && (
-                      <g transform={`translate(${pos.x - 12}, ${pos.y - 12})`}>
-                        {/* Tiger Face Motif */}
+                      <g transform={`translate(${pos.x - 14}, ${pos.y - 14}) scale(1.18)`}>
+                        {/* Tiger Face & Ears Motif */}
                         <path
-                          d="M4 6 C2 2 6 1 8 4 Z"
+                          d="M4 6 C2 1 6 0 8 4 Z"
                           fill="#451a03"
                         />
                         <path
-                          d="M20 6 C22 2 18 1 16 4 Z"
+                          d="M20 6 C22 1 18 0 16 4 Z"
                           fill="#451a03"
                         />
-                        {/* Eyes */}
-                        <circle cx="8" cy="11" r="1.5" fill="#fef08a" />
-                        <circle cx="16" cy="11" r="1.5" fill="#fef08a" />
+                        {/* Inner Ear Highlights */}
+                        <polygon points="5,4 7,3 6,5" fill="#f59e0b" />
+                        <polygon points="19,4 17,3 18,5" fill="#f59e0b" />
+                        {/* Fierce Amber Eyes */}
+                        <circle cx="8" cy="11" r="1.8" fill="#fef08a" />
+                        <circle cx="16" cy="11" r="1.8" fill="#fef08a" />
+                        <circle cx="8" cy="11" r="0.8" fill="#451a03" />
+                        <circle cx="16" cy="11" r="0.8" fill="#451a03" />
                         {/* Nose & Whiskers */}
-                        <polygon points="12,14 10,12 14,12" fill="#451a03" />
+                        <polygon points="12,14 9.5,12 14.5,12" fill="#451a03" />
                         <path
-                          d="M9 16 C11 17 13 17 15 16"
+                          d="M9 16 C11 17.5 13 17.5 15 16"
                           stroke="#451a03"
-                          strokeWidth="1.2"
+                          strokeWidth="1.4"
                           fill="none"
                           strokeLinecap="round"
                         />
+                        {/* Whiskers */}
+                        <line x1="7" y1="13" x2="3" y2="12" stroke="#451a03" strokeWidth="0.9" />
+                        <line x1="7" y1="15" x2="3" y2="16" stroke="#451a03" strokeWidth="0.9" />
+                        <line x1="17" y1="13" x2="21" y2="12" stroke="#451a03" strokeWidth="0.9" />
+                        <line x1="17" y1="15" x2="21" y2="16" stroke="#451a03" strokeWidth="0.9" />
                         {/* Tiger Forehead Stripes */}
-                        <line x1="12" y1="5" x2="12" y2="8" stroke="#451a03" strokeWidth="1.4" />
-                        <line x1="9" y1="6" x2="11" y2="8" stroke="#451a03" strokeWidth="1.2" />
-                        <line x1="15" y1="6" x2="13" y2="8" stroke="#451a03" strokeWidth="1.2" />
+                        <line x1="12" y1="4.5" x2="12" y2="8" stroke="#451a03" strokeWidth="1.6" />
+                        <line x1="8.5" y1="6" x2="11" y2="8" stroke="#451a03" strokeWidth="1.3" />
+                        <line x1="15.5" y1="6" x2="13" y2="8" stroke="#451a03" strokeWidth="1.3" />
                       </g>
                     )}
 
-                    {/* Goat Specific Graphics */}
+                    {/* Refined Large Goat Graphics 🐐 */}
                     {piece === 'goat' && (
-                      <g transform={`translate(${pos.x - 12}, ${pos.y - 12})`}>
-                        {/* Horns */}
+                      <g transform={`translate(${pos.x - 13}, ${pos.y - 13}) scale(1.1)`}>
+                        {/* Curved Horns */}
                         <path
-                          d="M6 9 C5 4 8 2 10 6"
-                          stroke="#334155"
-                          strokeWidth="1.8"
+                          d="M6 9 C4 3 8 1 10 6"
+                          stroke="#1e293b"
+                          strokeWidth="2.2"
                           fill="none"
                           strokeLinecap="round"
                         />
                         <path
-                          d="M18 9 C19 4 16 2 14 6"
-                          stroke="#334155"
-                          strokeWidth="1.8"
+                          d="M18 9 C20 3 16 1 14 6"
+                          stroke="#1e293b"
+                          strokeWidth="2.2"
                           fill="none"
                           strokeLinecap="round"
                         />
                         {/* Eyes */}
-                        <circle cx="8" cy="13" r="1.4" fill="#0f172a" />
-                        <circle cx="16" cy="13" r="1.4" fill="#0f172a" />
+                        <circle cx="8" cy="13" r="1.6" fill="#0f172a" />
+                        <circle cx="16" cy="13" r="1.6" fill="#0f172a" />
+                        <circle cx="8.3" cy="12.7" r="0.5" fill="#ffffff" />
+                        <circle cx="16.3" cy="12.7" r="0.5" fill="#ffffff" />
                         {/* Muzzle */}
                         <path
-                          d="M10 16 C11 18 13 18 14 16"
-                          stroke="#475569"
-                          strokeWidth="1.3"
+                          d="M10 16 C11 18.5 13 18.5 14 16"
+                          stroke="#334155"
+                          strokeWidth="1.5"
                           fill="none"
                           strokeLinecap="round"
                         />
@@ -432,11 +543,11 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
 
                     {/* Trapped Tiger Warning Badge */}
                     {isTrappedTiger && (
-                      <g transform={`translate(${pos.x + 8}, ${pos.y - 14})`}>
-                        <circle cx="5" cy="5" r="7" fill="#ef4444" stroke="#ffffff" strokeWidth="1.2" />
+                      <g transform={`translate(${pos.x + 9}, ${pos.y - 16})`}>
+                        <circle cx="5" cy="5" r="7.5" fill="#ef4444" stroke="#ffffff" strokeWidth="1.4" />
                         <text
                           x="5"
-                          y="8"
+                          y="8.5"
                           textAnchor="middle"
                           fontSize="9"
                           fontWeight="900"

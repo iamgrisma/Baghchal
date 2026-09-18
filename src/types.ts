@@ -10,7 +10,7 @@ export type PlayerRole = 'tiger' | 'goat';
 
 export type GameMode = 'ai' | 'local' | 'online';
 
-export type AIDifficulty = 'easy' | 'medium' | 'hard';
+export type AIDifficulty = 'easy' | 'medium' | 'hard' | 'adaptive';
 
 export type GamePhase = 'placement' | 'movement';
 

@@ -1,9 +1,11 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 
 const app = express();
+const httpServer = http.createServer(app);
 const PORT = 3000;
 
 app.use(express.json({ limit: '1mb' }));
@@ -237,8 +239,12 @@ app.get('/api/kv/:roomId', (req, res) => {
 // Start Express Server
 async function start() {
   if (process.env.NODE_ENV !== 'production') {
+    const isHmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: isHmrDisabled ? false : { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -250,7 +256,7 @@ async function start() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Baghchal server listening on port ${PORT}`);
   });
 }

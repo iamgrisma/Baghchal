@@ -89,17 +89,17 @@ export const GameControls: React.FC<GameControlsProps> = ({
           <div className="flex items-center gap-1.5">
             <span className="text-stone-400 font-medium">Difficulty:</span>
             <div className="flex rounded-lg bg-stone-950 p-0.5 border border-stone-800">
-              {(['easy', 'medium', 'hard'] as AIDifficulty[]).map((d) => (
+              {(['easy', 'medium', 'hard', 'adaptive'] as AIDifficulty[]).map((d) => (
                 <button
                   key={d}
                   onClick={() => onSelectDifficulty(d)}
-                  className={`px-2 py-0.5 rounded capitalize font-medium transition ${
+                  className={`px-2 py-0.5 rounded capitalize font-medium transition text-[11px] ${
                     difficulty === d
                       ? 'bg-amber-600 text-stone-950'
                       : 'text-stone-400 hover:text-stone-200'
                   }`}
                 >
-                  {d === 'hard' ? 'Master' : d}
+                  {d === 'adaptive' ? 'Adaptive ⚡' : d === 'hard' ? 'Master' : d}
                 </button>
               ))}
             </div>

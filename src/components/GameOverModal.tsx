@@ -10,6 +10,7 @@ interface GameOverModalProps {
   userRole?: PlayerRole;
   onPlayAgain: () => void;
   onReviewBoard: () => void;
+  onChangeMode?: () => void;
   isOpen: boolean;
 }
 
@@ -20,6 +21,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   userRole,
   onPlayAgain,
   onReviewBoard,
+  onChangeMode,
   isOpen,
 }) => {
   useEffect(() => {
@@ -83,9 +85,19 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             <span>Play Again</span>
           </button>
 
+          {onChangeMode && (
+            <button
+              onClick={onChangeMode}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-400 font-semibold text-xs border border-stone-700 transition"
+            >
+              <Swords className="w-3.5 h-3.5" />
+              <span>Change Mode &amp; Level</span>
+            </button>
+          )}
+
           <button
             onClick={onReviewBoard}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-medium text-xs transition"
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-stone-300 font-medium text-xs transition"
           >
             <Eye className="w-3.5 h-3.5" />
             <span>Review Final Board</span>

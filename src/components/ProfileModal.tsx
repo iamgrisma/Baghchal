@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, User, Trophy, Flame, Shield, Swords, Trash2, Edit2, Check } from 'lucide-react';
+import { X, User, Trophy, Flame, Shield, Swords, Trash2, Edit2, Check, Zap } from 'lucide-react';
 import { PlayerProfile } from '../types';
+import { getAdaptiveAIDetails } from '../game/ai';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
   const totalWins = profile.winsGoat + profile.winsTiger;
   const winRate = profile.gamesPlayed > 0 ? Math.round((totalWins / profile.gamesPlayed) * 100) : 0;
+  const adaptiveInfo = getAdaptiveAIDetails(profile);
 
   const handleSaveName = (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,6 +134,22 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               </div>
               <span className="text-sm font-bold font-mono text-amber-400">{profile.winsTiger} Wins</span>
             </div>
+          </div>
+
+          {/* Dynamic Adaptive AI Standing */}
+          <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 font-bold text-purple-300 text-xs">
+                <Zap className="w-3.5 h-3.5 text-purple-400" />
+                <span>Adaptive AI Standing</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-200 border border-purple-500/40">
+                Tier: {adaptiveInfo.tierLabel}
+              </span>
+            </div>
+            <p className="text-[11px] text-stone-300 leading-snug">
+              {adaptiveInfo.description}
+            </p>
           </div>
 
           {/* Recent Match History */}

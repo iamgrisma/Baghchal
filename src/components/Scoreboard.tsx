@@ -12,6 +12,7 @@ interface ScoreboardProps {
   gameMode: string;
   opponentName?: string;
   playerRole?: PlayerRole; // if vs AI or online
+  isAiThinking?: boolean;
 }
 
 export const Scoreboard: React.FC<ScoreboardProps> = ({
@@ -24,6 +25,7 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
   gameMode,
   opponentName,
   playerRole,
+  isAiThinking,
 }) => {
   const isGameOver = status !== 'playing';
 
@@ -51,7 +53,9 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
           {!isGameOver ? (
             <div
               className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition-all shadow-sm ${
-                turn === 'goat'
+                isAiThinking
+                  ? 'bg-amber-500/20 text-amber-300 ring-2 ring-amber-400/50 animate-pulse'
+                  : turn === 'goat'
                   ? 'bg-slate-200 text-slate-900 ring-2 ring-slate-400/50'
                   : 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 ring-2 ring-amber-400/50'
               }`}
@@ -60,7 +64,13 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-current" />
               </span>
-              <span>{turn === 'goat' ? "Goat's Turn" : "Tiger's Turn"}</span>
+              <span>
+                {isAiThinking
+                  ? 'AI Thinking...'
+                  : turn === 'goat'
+                  ? "Goat's Turn"
+                  : "Tiger's Turn"}
+              </span>
             </div>
           ) : (
             <div
