@@ -50,8 +50,8 @@ import {
 type AppScreen = 'splash' | 'setup' | 'play';
 
 export default function App() {
-  // Navigation Screens: 'splash' -> 'setup' -> 'play'
-  const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
+  // Navigation Screens: 'play' is default for immediate Telegram gameplay
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('play');
 
   // Game State
   const [gameState, setGameState] = useState<GameState>(createInitialGameState);
@@ -73,6 +73,7 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
   const [showOnlineLobby, setShowOnlineLobby] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+  const [showSetupModal, setShowSetupModal] = useState(false);
   const [isTelegram, setIsTelegram] = useState(false);
 
   // Timer reference for match duration
@@ -518,72 +519,184 @@ export default function App() {
     );
   }
 
-  // Render Screen 3: Immersive Full Screen Play Arena (Model Game Type View)
+  // Render Screen: Immersive Single-Viewport Mobile Game UI
   return (
-    <main className="h-screen h-dvh max-h-screen bg-stone-950 text-stone-100 flex flex-col justify-between overflow-hidden select-none px-2 sm:px-4 py-1.5">
-      {/* 1. Minimal Header & Quick Controls */}
-      <header className="w-full max-w-xl mx-auto flex items-center justify-between pb-1 border-b border-stone-800/80 px-1">
-        {/* Back to Setup Menu */}
-        <button
-          id="play-back-menu-btn"
-          onClick={() => setCurrentScreen('setup')}
-          className="flex items-center gap-1 py-1.5 px-2.5 rounded-xl bg-stone-900 hover:bg-stone-850 text-stone-300 hover:text-amber-400 border border-stone-800 text-xs font-semibold transition"
-          title="Back to Setup Menu"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span className="hidden xs:inline">Menu</span>
-        </button>
-
-        {/* Turn Indicator Pill */}
-        <div className="flex items-center gap-2">
-          {gameState.status !== 'playing' ? (
-            <div className="px-3 py-1 rounded-full text-xs font-black bg-stone-800 text-stone-300 border border-stone-700">
-              Game Finished
-            </div>
-          ) : isAiThinking ? (
-            <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-amber-500/20 text-amber-300 ring-2 ring-amber-400/50 animate-pulse">
-              <span className="relative flex h-2 w-2">
+    <main
+      className="fixed inset-0 w-full h-full h-[100dvh] max-h-[100dvh] bg-stone-950 text-stone-100 flex flex-col justify-between overflow-hidden select-none touch-none px-2 py-1 xs:py-1.5"
+      style={{ height: '100dvh', maxHeight: '100dvh' }}
+    >
+      {/* 1. TOP GAME HUD: Opponent / Tiger Status & Quick Controls */}
+      <header className="w-full max-w-lg mx-auto flex items-center justify-between gap-1.5 px-1 py-1 shrink-0">
+        {/* Opponent / Tiger Player Badge */}
+        <div className="flex items-center gap-1.5 bg-stone-900/90 border border-stone-800/90 rounded-xl px-2.5 py-1 shadow-sm">
+          <div className="text-base relative">
+            🐅
+            {gameState.turn === 'tiger' && (
+              <span className="absolute -top-1 -right-1 flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
               </span>
-              <span>AI Thinking...</span>
+            )}
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[11px] font-bold text-stone-200 leading-tight">
+              {mode === 'ai'
+                ? `AI (${difficulty === 'adaptive' ? getAdaptiveAIDetails(profile).tierLabel : difficulty})`
+                : mode === 'online' && roomInfo
+                ? roomInfo.opponentName
+                : 'Tiger Player'}
+            </span>
+            <div className="flex items-center gap-1 text-[9px] text-amber-400 font-medium">
+              <span>Trapped:</span>
+              <strong className="font-mono text-stone-100">{trappedInfo.trappedCount}/4</strong>
+              <div className="flex items-center gap-0.5 ml-0.5">
+                {[0, 1, 2, 3].map((slot) => (
+                  <span
+                    key={`trap-pip-${slot}`}
+                    className={`w-1.5 h-1.5 rounded-full transition-all ${
+                      slot < trappedInfo.trappedCount
+                        ? 'bg-emerald-400 shadow-sm shadow-emerald-400/80 ring-1 ring-emerald-300'
+                        : 'bg-stone-800 border border-stone-700'
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
+          </div>
+        </div>
+
+        {/* Center: Turn Status Pill */}
+        <div className="flex items-center">
+          {gameState.status !== 'playing' ? (
+            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-amber-500 text-stone-950 shadow">
+              {gameState.status === 'goat_won' ? 'Goats Won! 🏆' : 'Tigers Won! 🏆'}
+            </span>
+          ) : isAiThinking ? (
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+              <span>Thinking...</span>
+            </span>
           ) : gameState.turn === 'goat' ? (
-            <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-slate-200 text-slate-900 ring-2 ring-slate-400/50 shadow-sm">
-              <span className="text-sm">🐐</span>
-              <span>Goat's Turn</span>
-            </div>
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-200 text-slate-900 ring-2 ring-slate-400/50 shadow-sm">
+              <span>🐐 Your Turn</span>
+            </span>
           ) : (
-            <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 ring-2 ring-amber-400/50 shadow-sm">
-              <span className="text-sm">🐅</span>
-              <span>Tiger's Turn</span>
-            </div>
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 ring-2 ring-amber-400/50 shadow-sm">
+              <span>🐅 Tiger's Turn</span>
+            </span>
           )}
         </div>
 
-        {/* Minimal Quick Actions (Sound, Undo, Restart, Rules) */}
+        {/* Right: Quick Action Icons */}
         <div className="flex items-center gap-1">
-          {/* Sound Toggle */}
           <button
             onClick={handleToggleSound}
-            className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-amber-400 border border-stone-800 text-xs transition"
+            className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 text-xs transition active:scale-95"
             title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
           >
-            {isMuted ? <VolumeX className="w-3.5 h-3.5 text-stone-500" /> : <Volume2 className="w-3.5 h-3.5 text-amber-400" />}
+            {isMuted ? <VolumeX className="w-4 h-4 text-stone-500" /> : <Volume2 className="w-4 h-4 text-amber-400" />}
           </button>
+          <button
+            onClick={() => setShowRules(true)}
+            className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 text-xs transition active:scale-95"
+            title="How to play"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowProfile(true)}
+            className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 text-xs transition active:scale-95"
+            title="Profile & Stats"
+          >
+            <Trophy className="w-4 h-4 text-amber-400" />
+          </button>
+        </div>
+      </header>
 
+      {/* 2. CENTER SQUARE BOARD ARENA */}
+      <section className="flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden p-0.5 sm:p-1">
+        <div className="w-[min(94vw,calc(100dvh-175px))] h-[min(94vw,calc(100dvh-175px))] max-w-[460px] max-h-[460px] aspect-square flex items-center justify-center">
+          <BaghchalBoard
+            board={gameState.board}
+            turn={gameState.turn}
+            phase={gameState.phase}
+            goatsInReserve={gameState.goatsInReserve}
+            selectedPos={selectedPos}
+            validMoves={validMoves}
+            lastMove={gameState.lastMove}
+            isInteractive={isUserTurn()}
+            onNodeClick={handleNodeClick}
+          />
+        </div>
+      </section>
+
+      {/* 3. TACTICAL STATUS RIBBON */}
+      <div className="w-full max-w-lg mx-auto text-center shrink-0 py-0.5">
+        <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-stone-900/90 border border-stone-800/80 text-[11px] font-medium text-amber-300 shadow-sm">
+          {gameState.status !== 'playing' ? (
+            <span>Match finished! Tap "Play Again" or "Reset".</span>
+          ) : gameState.phase === 'placement' && gameState.turn === 'goat' ? (
+            <span>Tap empty spot to place Goat ({gameState.goatsInReserve} in reserve)</span>
+          ) : gameState.turn === 'goat' ? (
+            selectedPos === null ? <span>Select a Goat to move</span> : <span>Tap adjacent empty spot to move</span>
+          ) : isAiThinking ? (
+            <span>Tiger is calculating optimal tactical move...</span>
+          ) : selectedPos === null ? (
+            <span>Select a Tiger to move or jump capture</span>
+          ) : (
+            <span>Tap adjacent spot or jump over a goat</span>
+          )}
+        </div>
+      </div>
+
+      {/* 4. BOTTOM PLAYER STATS & ACTION CONTROLS */}
+      <footer className="w-full max-w-lg mx-auto flex flex-col gap-1.5 shrink-0 px-1 pb-1">
+        {/* Goat Player Row */}
+        <div className="flex items-center justify-between bg-stone-900/90 border border-stone-800/80 rounded-xl px-2.5 py-1 text-xs shadow-sm">
+          <div className="flex items-center gap-1.5">
+            <span className="text-base">🐐</span>
+            <span className="font-bold text-stone-200">
+              {profile.name || 'You (Goats)'}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 text-[11px]">
+            <span className="text-stone-300">
+              Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong>
+            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-stone-300">Eaten:</span>
+              <strong className="font-mono text-red-400 mr-1">{gameState.goatsCaptured}/5</strong>
+              <div className="flex items-center gap-0.5">
+                {[0, 1, 2, 3, 4].map((slot) => (
+                  <span
+                    key={`eaten-pip-${slot}`}
+                    className={`w-1.5 h-1.5 rounded-full transition-all ${
+                      slot < gameState.goatsCaptured
+                        ? 'bg-red-500 shadow-sm shadow-red-500/80 ring-1 ring-red-400'
+                        : 'bg-stone-800 border border-stone-700'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Button Deck: Large thumb-friendly arcade buttons */}
+        <div className="grid grid-cols-4 gap-1.5">
           {/* Undo */}
           <button
             onClick={handleUndo}
             disabled={historyStack.length === 0 || mode === 'online' || isAiThinking}
-            className={`p-1.5 rounded-lg border text-xs transition ${
+            className={`flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-xs font-bold transition ${
               historyStack.length === 0 || mode === 'online' || isAiThinking
-                ? 'bg-stone-950 text-stone-600 border-stone-900 cursor-not-allowed'
-                : 'bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-amber-400 border-stone-800 active:scale-95'
+                ? 'bg-stone-900/40 text-stone-600 border border-stone-900 cursor-not-allowed'
+                : 'bg-stone-850 hover:bg-stone-800 text-stone-200 border border-stone-700 active:scale-95 shadow'
             }`}
-            title="Undo Move"
+            title="Undo last move"
           >
             <RotateCcw className="w-3.5 h-3.5" />
+            <span>Undo</span>
           </button>
 
           {/* Restart */}
@@ -592,86 +705,69 @@ export default function App() {
               resetGame();
               if (mode === 'online') sendRestart();
             }}
-            className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-amber-400 border border-stone-800 text-xs transition active:scale-95"
-            title="Restart Match"
+            className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-stone-850 hover:bg-stone-800 text-stone-200 border border-stone-700 text-xs font-bold transition active:scale-95 shadow"
+            title="Restart match"
           >
             <RefreshCw className="w-3.5 h-3.5" />
+            <span>Reset</span>
           </button>
 
-          {/* Rules */}
+          {/* Mode / Setup */}
           <button
-            onClick={() => setShowRules(true)}
-            className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-amber-400 border border-stone-800 text-xs transition"
-            title="Game Rules"
+            onClick={() => setShowSetupModal(true)}
+            className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-xs font-black transition active:scale-95 shadow"
+            title="Change Game Mode or Difficulty"
           >
-            <HelpCircle className="w-3.5 h-3.5" />
+            <span>🎮 Mode</span>
           </button>
 
-          {/* Online Lobby button if online */}
-          {mode === 'online' && (
-            <button
-              onClick={() => setShowOnlineLobby(true)}
-              className="p-1.5 rounded-lg bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-800 text-xs transition"
-              title="Online Lobby"
-            >
-              <Globe className="w-3.5 h-3.5" />
-            </button>
-          )}
+          {/* Online Lobby */}
+          <button
+            onClick={() => setShowOnlineLobby(true)}
+            className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition active:scale-95 shadow"
+            title="Online Multiplayer with Friends"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>Online</span>
+          </button>
         </div>
-      </header>
-
-      {/* 2. Minimal Space: Tiger Attack & Trap HUD */}
-      <MinimalGameHUD
-        turn={gameState.turn}
-        phase={gameState.phase}
-        status={gameState.status}
-        goatsInReserve={gameState.goatsInReserve}
-        goatsCaptured={gameState.goatsCaptured}
-        trappedTigersCount={trappedInfo.trappedCount}
-        gameMode={mode}
-        opponentName={mode === 'online' && roomInfo ? roomInfo.opponentName : undefined}
-        playerRole={mode === 'online' && roomInfo ? roomInfo.myRole : mode === 'ai' ? aiUserRole : undefined}
-        isAiThinking={isAiThinking}
-      />
-
-      {/* 3. Full Immersive Board Arena (Model Game Type View) */}
-      <section className="flex-1 flex items-center justify-center w-full max-w-xl mx-auto overflow-hidden p-0.5 sm:p-1">
-        <BaghchalBoard
-          board={gameState.board}
-          turn={gameState.turn}
-          phase={gameState.phase}
-          goatsInReserve={gameState.goatsInReserve}
-          selectedPos={selectedPos}
-          validMoves={validMoves}
-          lastMove={gameState.lastMove}
-          isInteractive={isUserTurn()}
-          onNodeClick={handleNodeClick}
-        />
-      </section>
-
-      {/* 4. Minimal Mode/Match Status Footer */}
-      <footer className="w-full max-w-xl mx-auto flex items-center justify-between text-[10px] text-stone-500 pt-0.5 border-t border-stone-900/60 px-2">
-        <span>
-          {mode === 'ai'
-            ? difficulty === 'adaptive'
-              ? `vs Adaptive AI (${getAdaptiveAIDetails(profile).tierLabel} · ${getAdaptiveAIDetails(profile).winRate}% Win Rate) · You play ${aiUserRole}`
-              : `vs AI (${difficulty}) · You play ${aiUserRole}`
-            : mode === 'online'
-            ? roomInfo
-              ? `Online Room: ${roomInfo.roomId}`
-              : 'Online Multiplayer'
-            : 'Friend Mode (Pass & Play)'}
-        </span>
-        <button
-          onClick={() => setShowProfile(true)}
-          className="text-stone-400 hover:text-amber-400 flex items-center gap-1 transition"
-        >
-          <Trophy className="w-3 h-3 text-amber-400" />
-          <span>Stats</span>
-        </button>
       </footer>
 
-      {/* Modals */}
+      {/* Modals & Overlays */}
+      {showSetupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-3 sm:p-4 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-md max-h-[92dvh] overflow-y-auto rounded-2xl border border-stone-800 bg-stone-950 p-4 shadow-2xl">
+            <GameSetupScreen
+              mode={mode}
+              aiUserRole={aiUserRole}
+              difficulty={difficulty}
+              profile={profile}
+              onSelectMode={(newMode) => {
+                setMode(newMode);
+                resetGame();
+              }}
+              onSelectAIRole={(r) => {
+                setAiUserRole(r);
+                resetGame();
+              }}
+              onSelectDifficulty={(d) => setDifficulty(d)}
+              onStartGame={() => {
+                resetGame();
+                if (mode === 'online') {
+                  setShowOnlineLobby(true);
+                }
+                setShowSetupModal(false);
+              }}
+              onBackToSplash={() => setShowSetupModal(false)}
+              onOpenRules={() => {
+                setShowSetupModal(false);
+                setShowRules(true);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
 
       <ProfileModal
@@ -723,7 +819,8 @@ export default function App() {
         }}
         onChangeMode={() => {
           resetGame();
-          setCurrentScreen('setup');
+          setShowGameOverModal(false);
+          setShowSetupModal(true);
         }}
         onReviewBoard={() => setShowGameOverModal(false)}
       />

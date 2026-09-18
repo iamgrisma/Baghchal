@@ -67,9 +67,9 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
   }, [validMoves]);
 
   return (
-    <div className="relative w-full max-w-[min(94vw,calc(100dvh-120px),520px)] aspect-square mx-auto touch-none select-none p-1 sm:p-2 flex items-center justify-center">
+    <div className="relative w-full h-full aspect-square touch-none select-none flex items-center justify-center">
       {/* Board container with deep wood/brass tactile frame */}
-      <div className="relative w-full h-full rounded-2xl bg-gradient-to-br from-stone-900 via-stone-925 to-stone-950 p-2 sm:p-3 shadow-2xl border-2 border-stone-800/80 ring-1 ring-amber-900/30">
+      <div className="relative w-full h-full rounded-2xl bg-gradient-to-br from-stone-900 via-stone-925 to-stone-950 p-1.5 sm:p-2.5 shadow-2xl border-2 border-stone-800/80 ring-1 ring-amber-900/30 flex items-center justify-center">
         
         {/* Subtle Nepali brass corner inlays */}
         <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-amber-600/60 rounded-tl-sm pointer-events-none" />
@@ -588,27 +588,6 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             );
           })}
         </svg>
-
-        {/* Phase / Helper Tip Ribbon */}
-        <div className="mt-2 text-center">
-          {phase === 'placement' && turn === 'goat' && (
-            <p className="text-xs text-amber-300 font-medium">
-              Tap any empty intersection to place Goat ({goatsInReserve} remaining)
-            </p>
-          )}
-          {phase === 'movement' && turn === 'goat' && (
-            <p className="text-xs text-stone-400 font-medium">
-              {selectedPos === null ? 'Select a Goat to move' : 'Tap an adjacent empty spot to move'}
-            </p>
-          )}
-          {turn === 'tiger' && (
-            <p className="text-xs text-amber-500 font-medium">
-              {selectedPos === null
-                ? 'Select a Tiger to move or jump capture'
-                : 'Select an adjacent spot or jump over a goat'}
-            </p>
-          )}
-        </div>
       </div>
     </div>
   );
