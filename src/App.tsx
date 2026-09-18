@@ -51,8 +51,8 @@ import {
 type AppScreen = 'splash' | 'setup' | 'play';
 
 export default function App() {
-  // Navigation Screens: 'play' is default for immediate Telegram gameplay
-  const [currentScreen, setCurrentScreen] = useState<AppScreen>('play');
+  // Navigation Screens: starts on 'splash' for authentic game branding & mode select
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
 
   // Game State
   const [gameState, setGameState] = useState<GameState>(createInitialGameState);
@@ -74,7 +74,6 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
   const [showOnlineLobby, setShowOnlineLobby] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
-  const [showSetupModal, setShowSetupModal] = useState(false);
   const [isTelegram, setIsTelegram] = useState(false);
 
   // Timer reference for match duration
@@ -588,18 +587,32 @@ export default function App() {
     >
       {/* 1. TOP GAME HUD: Opponent Status & Quick Controls */}
       <header className="w-full max-w-lg mx-auto flex items-center justify-between gap-1.5 px-1 py-1 shrink-0">
-        {/* Opponent Player Badge */}
-        <div className="flex items-center gap-1.5 bg-stone-900/90 border border-stone-800/90 rounded-xl px-2.5 py-1 shadow-sm">
-          <div className="text-base relative">
-            {opponentRole === 'tiger' ? '🐅' : '🐐'}
-            {gameState.turn === opponentRole && (
-              <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
-              </span>
-            )}
-          </div>
-          <div className="flex flex-col">
+        {/* Left: Back / Menu Button & Opponent Player Badge */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => {
+              if (mode === 'online') {
+                handleLeaveOnlineRoom();
+              }
+              setCurrentScreen('setup');
+            }}
+            className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-400 border border-stone-800 text-xs transition active:scale-95 shadow-sm"
+            title="Back to Game Setup / Menu"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+
+          <div className="flex items-center gap-1.5 bg-stone-900/90 border border-stone-800/90 rounded-xl px-2.5 py-1 shadow-sm">
+            <div className="text-base relative">
+              {opponentRole === 'tiger' ? '🐅' : '🐐'}
+              {gameState.turn === opponentRole && (
+                <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col">
             <span className="text-[11px] font-bold text-stone-200 leading-tight">
               {mode === 'ai'
                 ? `AI (${difficulty === 'adaptive' ? getAdaptiveAIDetails(profile).tierLabel : difficulty})`
@@ -634,6 +647,7 @@ export default function App() {
             )}
           </div>
         </div>
+      </div>
 
         {/* Center: Turn Status Pill */}
         <div className="flex items-center">
@@ -850,7 +864,12 @@ export default function App() {
 
           {/* Button 3: Mode / Setup */}
           <button
-            onClick={() => setShowSetupModal(true)}
+            onClick={() => {
+              if (mode === 'online') {
+                handleLeaveOnlineRoom();
+              }
+              setCurrentScreen('setup');
+            }}
             className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-xs font-black transition active:scale-95 shadow"
             title="Change Game Mode or Difficulty"
           >
@@ -874,44 +893,6 @@ export default function App() {
           </button>
         </div>
       </footer>
-
-      {/* Modals & Overlays */}
-      {showSetupModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-3 sm:p-4 backdrop-blur-md animate-fade-in">
-          <div className="relative w-full max-w-md max-h-[92dvh] overflow-y-auto rounded-2xl border border-stone-800 bg-stone-950 p-4 shadow-2xl">
-            <GameSetupScreen
-              mode={mode}
-              aiUserRole={aiUserRole}
-              difficulty={difficulty}
-              profile={profile}
-              onSelectMode={(newMode) => {
-                if (mode === 'online' && newMode !== 'online') {
-                  cleanupConnection();
-                }
-                setMode(newMode);
-                resetGame();
-              }}
-              onSelectAIRole={(r) => {
-                setAiUserRole(r);
-                resetGame();
-              }}
-              onSelectDifficulty={(d) => setDifficulty(d)}
-              onStartGame={() => {
-                resetGame();
-                if (mode === 'online') {
-                  setShowOnlineLobby(true);
-                }
-                setShowSetupModal(false);
-              }}
-              onBackToSplash={() => setShowSetupModal(false)}
-              onOpenRules={() => {
-                setShowSetupModal(false);
-                setShowRules(true);
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
 
@@ -966,7 +947,7 @@ export default function App() {
         onChangeMode={() => {
           resetGame();
           setShowGameOverModal(false);
-          setShowSetupModal(true);
+          setCurrentScreen('setup');
         }}
         onReviewBoard={() => setShowGameOverModal(false)}
       />

@@ -9,6 +9,10 @@ const RTC_CONFIG: RTCConfiguration = {
   ],
 };
 
+const NTFY_BASE = 'https://ntfy.sh';
+const NTFY_WS_BASE = 'wss://ntfy.sh';
+const MATCHMAKING_TOPIC = 'baghchal_matchmaking_v2';
+
 interface UseWebRTCGameProps {
   playerName: string;
   onRemoteMove: (move: Move, nextState: GameState) => void;
@@ -33,23 +37,54 @@ export function useWebRTCGame({
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
-  const pollingIntervalRef = useRef<number | null>(null);
-  const queuePollRef = useRef<number | null>(null);
-  const queueIdRef = useRef<string | null>(null);
+  const roomWsRef = useRef<WebSocket | null>(null);
+  const matchWsRef = useRef<WebSocket | null>(null);
+  const matchSeekIntervalRef = useRef<number | null>(null);
+  const matchTimeoutRef = useRef<number | null>(null);
+
   const currentRoomIdRef = useRef<string | null>(null);
   const roleRef = useRef<PlayerRole | null>(null);
   const isInitiatorRef = useRef(false);
-  const lastSeenMoveCountRef = useRef(0);
+  const localOfferRef = useRef<any>(null);
 
-  // Clean up WebRTC and timers
-  const cleanupConnection = () => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
+  const getCleanTopic = (roomId: string) => {
+    const clean = roomId.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return `baghchal_rm_${clean}`;
+  };
+
+  const publishToTopic = async (topic: string, data: any) => {
+    try {
+      await fetch(`${NTFY_BASE}/${topic}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+    } catch (e) {
+      console.warn('Publish error:', e);
     }
-    if (queuePollRef.current) {
-      clearInterval(queuePollRef.current);
-      queuePollRef.current = null;
+  };
+
+  // Clean up all connections, WebSockets, and timers
+  const cleanupConnection = () => {
+    if (matchSeekIntervalRef.current) {
+      clearInterval(matchSeekIntervalRef.current);
+      matchSeekIntervalRef.current = null;
+    }
+    if (matchTimeoutRef.current) {
+      clearTimeout(matchTimeoutRef.current);
+      matchTimeoutRef.current = null;
+    }
+    if (matchWsRef.current) {
+      try {
+        matchWsRef.current.close();
+      } catch (e) {}
+      matchWsRef.current = null;
+    }
+    if (roomWsRef.current) {
+      try {
+        roomWsRef.current.close();
+      } catch (e) {}
+      roomWsRef.current = null;
     }
     if (dcRef.current) {
       try {
@@ -63,13 +98,13 @@ export function useWebRTCGame({
       } catch (e) {}
       pcRef.current = null;
     }
+
     setDataChannelOpen(false);
     setRoomInfo(null);
     setIsSearching(false);
     currentRoomIdRef.current = null;
-    queueIdRef.current = null;
     roleRef.current = null;
-    lastSeenMoveCountRef.current = 0;
+    localOfferRef.current = null;
   };
 
   useEffect(() => {
@@ -77,86 +112,131 @@ export function useWebRTCGame({
   }, []);
 
   /**
-   * Start auto-matchmaking
+   * 1. AUTO MATCHMAKING (Global Realtime PubSub)
    */
   const startAutoMatch = async (preferredRole: 'any' | 'tiger' | 'goat' = 'any') => {
     cleanupConnection();
     setIsSearching(true);
-    setMatchStatusText('Entering matchmaking queue...');
+    setMatchStatusText('Connecting to matchmaking lobby...');
 
     try {
-      const res = await fetch('/api/matchmaking/join', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId, playerName: playerNameRef.current, preferredRole }),
-      });
+      const ws = new WebSocket(`${NTFY_WS_BASE}/${MATCHMAKING_TOPIC}/ws`);
+      matchWsRef.current = ws;
 
-      if (!res.ok) {
-        throw new Error(`Server returned status ${res.status}`);
-      }
+      const myJoinTime = Date.now();
 
-      const data = await res.json();
+      ws.onopen = () => {
+        setMatchStatusText('Searching for an opponent...');
 
-      if (data.status === 'matched') {
-        setupRoom(data.roomId, data.role, data.opponentName, data.isInitiator, true);
-      } else if (data.status === 'waiting') {
-        queueIdRef.current = data.queueId;
-        setMatchStatusText('Waiting for an opponent to join...');
-        pollQueue(data.queueId);
-      }
-    } catch (err: any) {
-      console.error('Matchmaking failed:', err);
-      setIsSearching(false);
-      setMatchStatusText('Matchmaking service unavailable. You can still create a private room!');
-    }
-  };
+        // Broadcast seek packet immediately
+        const seekPacket = {
+          type: 'seek',
+          playerId,
+          playerName: playerNameRef.current,
+          preferredRole,
+          timestamp: myJoinTime,
+        };
+        publishToTopic(MATCHMAKING_TOPIC, seekPacket);
 
-  /**
-   * Poll matchmaking queue
-   */
-  const pollQueue = (queueId: string) => {
-    queuePollRef.current = window.setInterval(async () => {
-      try {
-        const res = await fetch(`/api/matchmaking/status/${queueId}`);
-        if (!res.ok) return;
+        // Ping seek packet every 2.5 seconds while waiting
+        matchSeekIntervalRef.current = window.setInterval(() => {
+          publishToTopic(MATCHMAKING_TOPIC, seekPacket);
+        }, 2500);
 
-        const data = await res.json();
-
-        if (data.status === 'matched') {
-          if (queuePollRef.current) clearInterval(queuePollRef.current);
-          queuePollRef.current = null;
-          setupRoom(data.roomId, data.role, data.opponentName, data.isInitiator, true);
-        } else if (data.status === 'timeout' || data.status === 'expired') {
-          if (queuePollRef.current) clearInterval(queuePollRef.current);
-          queuePollRef.current = null;
+        // Timeout after 45 seconds if no match found
+        matchTimeoutRef.current = window.setTimeout(() => {
+          if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
           setIsSearching(false);
-          setMatchStatusText('No opponent found. Create a private room or try again.');
-        }
-      } catch (err) {
-        console.error('Queue poll error:', err);
-      }
-    }, 1200);
+          setMatchStatusText('No opponent found right now. Try creating a private room!');
+        }, 45000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const envelope = JSON.parse(event.data);
+          if (envelope.event !== 'message') return;
+          const msg = JSON.parse(envelope.message);
+
+          // Case A: Another player is seeking match
+          if (msg.type === 'seek' && msg.playerId !== playerId) {
+            // Player who has been waiting longer (or lower ID on tie) proposes the match
+            if (myJoinTime > msg.timestamp || (myJoinTime === msg.timestamp && playerId > msg.playerId)) {
+              const code = Math.random().toString(36).substring(2, 7).toUpperCase();
+              const roomId = `bc_${code}`;
+
+              let roleForSeeker: PlayerRole;
+              let roleForMe: PlayerRole;
+
+              if (msg.preferredRole === 'tiger' || preferredRole === 'goat') {
+                roleForSeeker = 'tiger';
+                roleForMe = 'goat';
+              } else if (msg.preferredRole === 'goat' || preferredRole === 'tiger') {
+                roleForSeeker = 'goat';
+                roleForMe = 'tiger';
+              } else {
+                roleForSeeker = 'goat';
+                roleForMe = 'tiger';
+              }
+
+              // Announce match to both players
+              publishToTopic(MATCHMAKING_TOPIC, {
+                type: 'match_found',
+                seekerId: msg.playerId,
+                proposerId: playerId,
+                roomId,
+                roleSeeker: roleForSeeker,
+                roleProposer: roleForMe,
+                nameSeeker: msg.playerName,
+                nameProposer: playerNameRef.current,
+              });
+
+              // Enter room
+              if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
+              if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
+              if (matchWsRef.current) matchWsRef.current.close();
+              matchWsRef.current = null;
+
+              setupRoom(roomId, roleForMe, msg.playerName, roleForMe === 'goat', true);
+            }
+          }
+
+          // Case B: A match announcement for me was received
+          if (msg.type === 'match_found' && msg.seekerId === playerId) {
+            if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
+            if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
+            if (matchWsRef.current) matchWsRef.current.close();
+            matchWsRef.current = null;
+
+            setupRoom(
+              msg.roomId,
+              msg.roleSeeker,
+              msg.nameProposer,
+              msg.roleSeeker === 'goat',
+              true
+            );
+          }
+        } catch (e) {}
+      };
+
+      ws.onerror = () => {
+        setMatchStatusText('Connection error. You can still create a private room.');
+      };
+    } catch (err) {
+      setIsSearching(false);
+      setMatchStatusText('Failed to connect to matchmaking. Try a private room.');
+    }
   };
 
   /**
    * Cancel matchmaking search
    */
-  const cancelAutoMatch = async () => {
-    if (queueIdRef.current) {
-      try {
-        await fetch('/api/matchmaking/cancel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ queueId: queueIdRef.current }),
-        });
-      } catch (e) {}
-    }
+  const cancelAutoMatch = () => {
     cleanupConnection();
     setMatchStatusText('Search cancelled.');
   };
 
   /**
-   * Create or Join a private custom room
+   * 2. PRIVATE CUSTOM ROOM
    */
   const joinCustomRoom = async (roomId: string, asHost: boolean) => {
     cleanupConnection();
@@ -168,7 +248,7 @@ export function useWebRTCGame({
   };
 
   /**
-   * Setup WebRTC peer connection + KV/Edge signaling
+   * 3. ROOM SETUP & WEBRTC PEER CONNECTION + REALTIME PUBSUB
    */
   const setupRoom = async (
     roomId: string,
@@ -181,7 +261,6 @@ export function useWebRTCGame({
     currentRoomIdRef.current = roomId;
     roleRef.current = role;
     isInitiatorRef.current = isInitiator;
-    lastSeenMoveCountRef.current = 0;
 
     setRoomInfo({
       roomId,
@@ -193,31 +272,37 @@ export function useWebRTCGame({
     });
 
     if (isInitiallyConnected) {
-      setMatchStatusText(`Connected to ${opponentName}! Initializing match...`);
+      setMatchStatusText(`Connected to ${opponentName}! Initializing game...`);
     } else {
       setMatchStatusText('Waiting for friend to join with room code...');
     }
 
+    const roomTopic = getCleanTopic(roomId);
+
+    // 1. Connect Room WebSocket for instant signaling & fallback game sync
+    const ws = new WebSocket(`${NTFY_WS_BASE}/${roomTopic}/ws`);
+    roomWsRef.current = ws;
+
+    // 2. Setup WebRTC PeerConnection
     try {
       const pc = new RTCPeerConnection(RTC_CONFIG);
       pcRef.current = pc;
 
       pc.onicecandidate = (event) => {
-        if (event.candidate && currentRoomIdRef.current) {
-          fetch(`/api/kv/${currentRoomIdRef.current}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sender: isInitiator ? 'host' : 'guest',
-              candidate: event.candidate,
-            }),
-          }).catch(() => {});
+        if (event.candidate) {
+          publishToTopic(roomTopic, {
+            type: 'candidate',
+            sender: isInitiator ? 'host' : 'guest',
+            candidate: event.candidate,
+          });
         }
       };
 
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'connected') {
-          setRoomInfo((prev) => (prev ? { ...prev, connected: true } : null));
+          setDataChannelOpen(true);
+          setRoomInfo((prev) => (prev ? { ...prev, connected: true, usingP2P: true } : null));
+          setMatchStatusText('Direct P2P WebRTC Connected (<10ms)!');
         } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
           setDataChannelOpen(false);
           setRoomInfo((prev) => (prev ? { ...prev, usingP2P: false } : null));
@@ -225,46 +310,118 @@ export function useWebRTCGame({
       };
 
       if (isInitiator) {
-        // Create DataChannel
+        // Host creates WebRTC DataChannel
         const dc = pc.createDataChannel('baghchal-sync', { ordered: true });
         attachDataChannel(dc);
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+        localOfferRef.current = offer;
 
-        await fetch(`/api/kv/${roomId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            offer,
+        ws.onopen = () => {
+          // Announce room ready
+          publishToTopic(roomTopic, {
+            type: 'room_ready',
             sender: 'host',
-            players: { host: playerNameRef.current },
-            gameState: null,
-          }),
-        });
-
-        startKVPolling(roomId, pc, true);
+            playerName: playerNameRef.current,
+            offer,
+          });
+        };
       } else {
         // Guest listens for incoming data channel
         pc.ondatachannel = (e) => {
           attachDataChannel(e.channel);
         };
 
-        // Notify room that guest has joined
-        fetch(`/api/kv/${roomId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        ws.onopen = () => {
+          // Announce guest joined
+          publishToTopic(roomTopic, {
+            type: 'guest_joined',
             sender: 'guest',
-            players: { guest: playerNameRef.current },
-          }),
-        }).catch(() => {});
-
-        startKVPolling(roomId, pc, false);
+            playerName: playerNameRef.current,
+          });
+        };
       }
+
+      // Handle incoming messages on Room WebSocket
+      ws.onmessage = async (event) => {
+        try {
+          const envelope = JSON.parse(event.data);
+          if (envelope.event !== 'message') return;
+          const msg = JSON.parse(envelope.message);
+
+          // A. Host receives Guest Joined
+          if (msg.type === 'guest_joined' && isInitiator) {
+            setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
+            setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
+
+            // Re-send offer to newly joined guest
+            if (localOfferRef.current) {
+              publishToTopic(roomTopic, {
+                type: 'offer',
+                sender: 'host',
+                playerName: playerNameRef.current,
+                offer: localOfferRef.current,
+              });
+            }
+          }
+
+          // B. Guest receives Host Room Ready or Offer
+          if ((msg.type === 'room_ready' || msg.type === 'offer') && !isInitiator && msg.offer) {
+            setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
+            setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
+
+            if (pc.signalingState !== 'stable') {
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+
+              publishToTopic(roomTopic, {
+                type: 'answer',
+                sender: 'guest',
+                playerName: playerNameRef.current,
+                answer,
+              });
+            }
+          }
+
+          // C. Host receives Guest Answer
+          if (msg.type === 'answer' && isInitiator && msg.answer) {
+            setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName || prev.opponentName, connected: true } : null));
+            if (pc.signalingState === 'have-local-offer') {
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+            }
+          }
+
+          // D. ICE Candidates Exchange
+          if (msg.type === 'candidate' && msg.candidate) {
+            const expectedSender = isInitiator ? 'guest' : 'host';
+            if (msg.sender === expectedSender && pc.remoteDescription) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+              } catch (e) {}
+            }
+          }
+
+          // E. Move Broadcast (WebSocket fallback if DataChannel is not connected)
+          if (msg.type === 'move') {
+            const expectedSender = isInitiator ? 'guest' : 'host';
+            if (msg.sender === expectedSender) {
+              onRemoteMove(msg.move, msg.state);
+            }
+          }
+
+          // F. Restart Broadcast
+          if (msg.type === 'restart') {
+            const expectedSender = isInitiator ? 'guest' : 'host';
+            if (msg.sender === expectedSender) {
+              onRemoteRestart();
+            }
+          }
+        } catch (e) {}
+      };
     } catch (err) {
-      console.error('WebRTC setup error, falling back to Cloudflare Edge sync:', err);
-      startKVPolling(roomId, null, isInitiator);
+      console.error('PeerConnection error:', err);
     }
   };
 
@@ -277,7 +434,7 @@ export function useWebRTCGame({
     dc.onopen = () => {
       setDataChannelOpen(true);
       setRoomInfo((prev) => (prev ? { ...prev, connected: true, usingP2P: true } : null));
-      setMatchStatusText('Connected via Direct P2P (Sub-10ms Latency)!');
+      setMatchStatusText('Direct P2P WebRTC Connected (<10ms)!');
     };
 
     dc.onclose = () => {
@@ -288,150 +445,39 @@ export function useWebRTCGame({
     dc.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        handleRemoteMessage(payload);
+        if (payload.type === 'move') {
+          onRemoteMove(payload.move, payload.state);
+        } else if (payload.type === 'restart') {
+          onRemoteRestart();
+        }
       } catch (err) {
-        console.error('Failed to parse WebRTC message:', err);
+        console.error('DataChannel parse error:', err);
       }
     };
   };
 
   /**
-   * Handle incoming remote messages
-   */
-  const handleRemoteMessage = (msg: any) => {
-    if (msg.type === 'move') {
-      if (msg.state?.moveHistory) {
-        lastSeenMoveCountRef.current = msg.state.moveHistory.length;
-      }
-      onRemoteMove(msg.move, msg.state);
-    } else if (msg.type === 'restart') {
-      lastSeenMoveCountRef.current = 0;
-      onRemoteRestart();
-    }
-  };
-
-  /**
-   * Poll Cloudflare Edge / KV storage for WebRTC signaling (Offer/Answer/Candidates) & Game State Sync
-   */
-  const startKVPolling = (
-    roomId: string,
-    pc: RTCPeerConnection | null,
-    isInitiator: boolean
-  ) => {
-    let answerSet = false;
-    let offerSet = false;
-    const processedCandidates = new Set<string>();
-
-    pollingIntervalRef.current = window.setInterval(async () => {
-      try {
-        const res = await fetch(`/api/kv/${roomId}`);
-        if (!res.ok) return;
-
-        const data = await res.json();
-        if (!data || data.notFound) return;
-
-        // 1. Detect Opponent Connection & Player Names
-        if (data.players) {
-          const remoteName = isInitiator ? data.players.guest : data.players.host;
-          if (remoteName) {
-            setRoomInfo((prev) => {
-              if (!prev) return null;
-              if (prev.opponentName !== remoteName || !prev.connected) {
-                return { ...prev, opponentName: remoteName, connected: true };
-              }
-              return prev;
-            });
-            setMatchStatusText(`Connected to ${remoteName}! Match in progress.`);
-          }
-        }
-
-        // 2. WebRTC Signaling via Cloudflare Edge Store
-        if (pc) {
-          if (isInitiator && !answerSet && data.answer) {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            answerSet = true;
-            setRoomInfo((prev) => (prev ? { ...prev, connected: true } : null));
-          } else if (!isInitiator && !offerSet && data.offer) {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-            offerSet = true;
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            await fetch(`/api/kv/${roomId}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                answer,
-                sender: 'guest',
-                players: { guest: playerNameRef.current },
-              }),
-            });
-            setRoomInfo((prev) => (prev ? { ...prev, connected: true } : null));
-          }
-
-          // Add ICE candidates
-          const candidates = isInitiator ? data.candidatesGuest : data.candidatesHost;
-          if (candidates && Array.isArray(candidates)) {
-            for (const cand of candidates) {
-              const str = JSON.stringify(cand);
-              if (!processedCandidates.has(str)) {
-                processedCandidates.add(str);
-                try {
-                  await pc.addIceCandidate(new RTCIceCandidate(cand));
-                } catch (e) {}
-              }
-            }
-          }
-        }
-
-        // 3. Seamless Fallback Game Sync (active if DataChannel is not open)
-        if (!dcRef.current || dcRef.current.readyState !== 'open') {
-          if (data.gameState && data.gameState.moveHistory) {
-            const moveCount = data.gameState.moveHistory.length;
-            if (moveCount > lastSeenMoveCountRef.current) {
-              lastSeenMoveCountRef.current = moveCount;
-              const lastMove = data.gameState.moveHistory[moveCount - 1];
-              // Only trigger if it was from opponent
-              if (lastMove && lastMove.piece !== roleRef.current) {
-                onRemoteMove(lastMove, data.gameState);
-              }
-            }
-          } else if (data.gameState === null && lastSeenMoveCountRef.current > 0) {
-            lastSeenMoveCountRef.current = 0;
-            onRemoteRestart();
-          }
-        }
-      } catch (err) {
-        // Transient network glitch, silently continue polling
-      }
-    }, 1200);
-  };
-
-  /**
-   * Broadcast move to remote opponent via WebRTC DataChannel (P2P) + Cloudflare Edge fallback
+   * Broadcast move to remote opponent via WebRTC DataChannel (P2P) + Realtime PubSub fallback
    */
   const sendMove = (move: Move, nextState: GameState) => {
-    if (nextState?.moveHistory) {
-      lastSeenMoveCountRef.current = nextState.moveHistory.length;
-    }
+    const payload = {
+      type: 'move',
+      sender: isInitiatorRef.current ? 'host' : 'guest',
+      move,
+      state: nextState,
+    };
 
-    const payload = { type: 'move', move, state: nextState };
-
-    // 1. Direct WebRTC DataChannel for instant sub-10ms delivery
+    // 1. Direct WebRTC DataChannel (instant sub-10ms delivery)
     if (dcRef.current && dcRef.current.readyState === 'open') {
       try {
         dcRef.current.send(JSON.stringify(payload));
-      } catch (err) {
-        console.error('DataChannel send failed:', err);
-      }
+      } catch (err) {}
     }
 
-    // 2. Persistent Cloudflare Edge sync fallback
+    // 2. Realtime PubSub broadcast (instant sub-50ms reliable delivery)
     if (currentRoomIdRef.current) {
-      fetch(`/api/kv/${currentRoomIdRef.current}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gameState: nextState }),
-      }).catch(() => {});
+      const topic = getCleanTopic(currentRoomIdRef.current);
+      publishToTopic(topic, payload);
     }
   };
 
@@ -439,19 +485,20 @@ export function useWebRTCGame({
    * Broadcast game restart
    */
   const sendRestart = () => {
-    lastSeenMoveCountRef.current = 0;
+    const payload = {
+      type: 'restart',
+      sender: isInitiatorRef.current ? 'host' : 'guest',
+    };
 
     if (dcRef.current && dcRef.current.readyState === 'open') {
       try {
-        dcRef.current.send(JSON.stringify({ type: 'restart' }));
+        dcRef.current.send(JSON.stringify(payload));
       } catch (err) {}
     }
+
     if (currentRoomIdRef.current) {
-      fetch(`/api/kv/${currentRoomIdRef.current}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gameState: null }),
-      }).catch(() => {});
+      const topic = getCleanTopic(currentRoomIdRef.current);
+      publishToTopic(topic, payload);
     }
   };
 
