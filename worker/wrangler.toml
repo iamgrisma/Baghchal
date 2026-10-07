@@ -1,0 +1,13 @@
+name = "baghchal-worker"
+main = "index.ts"
+compatibility_date = "2024-09-01"
+
+[durable_objects]
+bindings = [
+  { name = "BAGHCHAL_ROOM", class_name = "BaghchalRoom" },
+  { name = "LEADERBOARD_STORE", class_name = "LeaderboardStore" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BaghchalRoom", "LeaderboardStore"]
