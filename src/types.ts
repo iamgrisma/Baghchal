@@ -12,6 +12,10 @@ export type GamePhase = 'placement' | 'movement';
 
 export type GameStatus = 'playing' | 'tiger_won' | 'goat_won' | 'draw';
 
+export type BoardTheme = 'classic' | 'slate' | 'midnight';
+
+export type TimerMode = 'unlimited' | 'turn30s' | 'blitz5m';
+
 export interface Move {
   type: 'place' | 'step' | 'jump';
   from?: number;

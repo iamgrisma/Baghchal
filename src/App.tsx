@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   AIDifficulty,
+  BoardTheme,
   GameMode,
   GameState,
   Move,
   PieceType,
   PlayerProfile,
   PlayerRole,
+  TimerMode,
 } from './types';
 import {
   applyMove,
@@ -39,6 +41,7 @@ import {
   Trophy,
   Globe,
   Award,
+  Clock,
 } from 'lucide-react';
 import {
   initTelegramWebApp,
@@ -58,6 +61,15 @@ export default function App() {
   const [mode, setMode] = useState<GameMode>('ai');
   const [difficulty, setDifficulty] = useState<AIDifficulty>('medium');
   const [aiUserRole, setAiUserRole] = useState<PlayerRole>('goat');
+
+  // Board Theme & Timer Modes
+  const [boardTheme, setBoardTheme] = useState<BoardTheme>('classic');
+  const [timerMode, setTimerMode] = useState<TimerMode>('unlimited');
+  const [turnSecondsLeft, setTurnSecondsLeft] = useState<number>(30);
+  const [blitzClocks, setBlitzClocks] = useState<{ goat: number; tiger: number }>({
+    goat: 300,
+    tiger: 300,
+  });
 
   // Interaction State
   const [selectedPos, setSelectedPos] = useState<number | null>(null);
@@ -231,7 +243,55 @@ export default function App() {
     setIsAiThinking(false);
     setShowGameOverModal(false);
     matchStartTime.current = Date.now();
+    setTurnSecondsLeft(30);
+    setBlitzClocks({ goat: 300, tiger: 300 });
   }, []);
+
+  // Clock Countdown Loop
+  useEffect(() => {
+    if (gameState.status !== 'playing' || currentScreen !== 'play') return;
+    if (timerMode === 'unlimited') return;
+
+    const interval = window.setInterval(() => {
+      if (timerMode === 'turn30s') {
+        setTurnSecondsLeft((prev) => {
+          if (prev <= 1) {
+            // Timeout on turn clock
+            if (isUserTurn()) {
+              triggerTelegramHaptic('warning');
+            }
+            return 30;
+          }
+          return prev - 1;
+        });
+      } else if (timerMode === 'blitz5m') {
+        setBlitzClocks((prev) => {
+          const currentTurn = gameStateRef.current.turn;
+          const nextTime = Math.max(0, prev[currentTurn] - 1);
+
+          if (nextTime === 0) {
+            // Flag falls: opponent wins on time
+            const winningStatus = currentTurn === 'goat' ? 'tiger_won' : 'goat_won';
+            setGameState((s) => ({ ...s, status: winningStatus }));
+          }
+
+          return {
+            ...prev,
+            [currentTurn]: nextTime,
+          };
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [gameState.status, currentScreen, timerMode, isUserTurn]);
+
+  // Reset turn clock on each new move
+  useEffect(() => {
+    if (timerMode === 'turn30s') {
+      setTurnSecondsLeft(30);
+    }
+  }, [gameState.turn, gameState.moveHistory.length, timerMode]);
 
   // Handle Game Over Flow & Global Leaderboard update
   useEffect(() => {
@@ -444,6 +504,12 @@ export default function App() {
     setIsMuted(next);
   };
 
+  const formatClock = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
   if (currentScreen === 'splash') {
     return (
       <>
@@ -495,6 +561,8 @@ export default function App() {
           mode={mode}
           aiUserRole={aiUserRole}
           difficulty={difficulty}
+          boardTheme={boardTheme}
+          timerMode={timerMode}
           profile={profile}
           onSelectMode={(newMode) => {
             if (mode === 'online' && newMode !== 'online') {
@@ -508,6 +576,8 @@ export default function App() {
             resetGame();
           }}
           onSelectDifficulty={(d) => setDifficulty(d)}
+          onSelectTheme={(t) => setBoardTheme(t)}
+          onSelectTimer={(tm) => setTimerMode(tm)}
           onStartGame={() => {
             resetGame();
             if (mode === 'online') {
@@ -550,7 +620,7 @@ export default function App() {
             <ArrowLeft className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center gap-1.5 bg-stone-900/90 border border-stone-800/90 rounded-xl px-2.5 py-1 shadow-sm">
+          <div className="flex items-center gap-1.5 bg-stone-900/90 border border-stone-800/90 rounded-xl px-2 py-1 shadow-sm">
             <div className="text-base relative">
               {opponentRole === 'tiger' ? '🐅' : '🐐'}
               {gameState.turn === opponentRole && (
@@ -585,25 +655,41 @@ export default function App() {
           </div>
         </div>
 
-        {/* Center: Turn Status Pill */}
-        <div className="flex items-center">
+        {/* Center: Turn Status & Clock Pill */}
+        <div className="flex items-center gap-1.5">
           {gameState.status !== 'playing' ? (
-            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-amber-500 text-stone-950 shadow">
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-500 text-stone-950 shadow">
               {gameState.status === 'goat_won' ? 'Goats Won! 🏆' : 'Tigers Won! 🏆'}
             </span>
           ) : isAiThinking ? (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
               <span>Thinking...</span>
             </span>
           ) : isUserTurn() ? (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-emerald-500 text-stone-950 ring-2 ring-emerald-400/50 shadow-sm">
-              <span>{userRole === 'goat' ? '🐐 Your Turn' : '🐅 Your Turn'}</span>
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-500 text-stone-950 ring-2 ring-emerald-400/50 shadow-sm">
+              <span>{userRole === 'goat' ? '🐐 Turn' : '🐅 Turn'}</span>
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-stone-900 text-stone-300 border border-stone-800 shadow-sm">
-              <span>{opponentRole === 'goat' ? '🐐' : '🐅'} Opponent Turn</span>
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-stone-900 text-stone-300 border border-stone-800 shadow-sm">
+              <span>{opponentRole === 'goat' ? '🐐' : '🐅'} Turn</span>
             </span>
+          )}
+
+          {/* Clock Pill */}
+          {timerMode !== 'unlimited' && gameState.status === 'playing' && (
+            <div
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border transition ${
+                timerMode === 'turn30s' && turnSecondsLeft <= 5
+                  ? 'bg-red-950/80 border-red-500 text-red-300 animate-pulse'
+                  : 'bg-stone-900 border-stone-700 text-amber-300'
+              }`}
+            >
+              <Clock className="w-3 h-3 text-amber-400" />
+              <span>
+                {timerMode === 'turn30s' ? `${turnSecondsLeft}s` : formatClock(blitzClocks[gameState.turn])}
+              </span>
+            </div>
           )}
         </div>
 
@@ -638,6 +724,7 @@ export default function App() {
           lastMove={gameState.lastMove}
           isInteractive={isUserTurn()}
           onNodeClick={handleNodeClick}
+          theme={boardTheme}
         />
       </section>
 
