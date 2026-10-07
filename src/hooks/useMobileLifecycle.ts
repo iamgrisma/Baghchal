@@ -5,10 +5,17 @@ import { Capacitor } from '@capacitor/core';
 
 interface MobileLifecycleProps {
   currentScreen: 'splash' | 'setup' | 'play';
+  hasOpenModal: boolean;
+  onCloseModal: () => void;
   onNavigateBack: () => void;
 }
 
-export function useMobileLifecycle({ currentScreen, onNavigateBack }: MobileLifecycleProps) {
+export function useMobileLifecycle({
+  currentScreen,
+  hasOpenModal,
+  onCloseModal,
+  onNavigateBack,
+}: MobileLifecycleProps) {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
@@ -24,9 +31,11 @@ export function useMobileLifecycle({ currentScreen, onNavigateBack }: MobileLife
     configureNativeChrome();
 
     const backListener = CapacitorApp.addListener('backButton', () => {
-      if (currentScreen === 'play' || currentScreen === 'setup') {
+      if (hasOpenModal) {
+        onCloseModal();
+      } else if (currentScreen === 'play') {
         onNavigateBack();
-      } else {
+      } else if (currentScreen === 'setup') {
         CapacitorApp.exitApp();
       }
     });
@@ -34,5 +43,5 @@ export function useMobileLifecycle({ currentScreen, onNavigateBack }: MobileLife
     return () => {
       backListener.then((listener) => listener.remove());
     };
-  }, [currentScreen, onNavigateBack]);
+  }, [currentScreen, hasOpenModal, onCloseModal, onNavigateBack]);
 }

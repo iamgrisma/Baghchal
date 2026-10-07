@@ -13,6 +13,7 @@ import { sound } from './utils/audio';
 import { loadPlayerProfile, recordMatchResult, savePlayerProfile } from './utils/storage';
 import { triggerNativeHaptic } from './utils/nativeHaptics';
 import { useWebRTCGame } from './hooks/useWebRTCGame';
+import { useMobileLifecycle } from './hooks/useMobileLifecycle';
 import { BaghchalBoard } from './components/BaghchalBoard';
 import { SplashScreen } from './components/SplashScreen';
 import { GameSetupScreen } from './components/GameSetupScreen';
@@ -216,6 +217,38 @@ export default function App() {
       setCurrentScreen('play');
     }
   }, []);
+
+  const handleCloseAllModals = useCallback(() => {
+    setShowRules(false);
+    setShowProfile(false);
+    setShowLeaderboard(false);
+    setShowOnlineLobby(false);
+    setShowGameOverModal(false);
+    setShowLedgerMenu(false);
+    setShowSideMenu(false);
+  }, []);
+
+  const handleMobileBack = useCallback(() => {
+    if (currentScreen === 'play') {
+      setCurrentScreen('setup');
+    }
+  }, [currentScreen]);
+
+  const hasAnyModalOpen =
+    showRules ||
+    showProfile ||
+    showLeaderboard ||
+    showOnlineLobby ||
+    showGameOverModal ||
+    showLedgerMenu ||
+    showSideMenu;
+
+  useMobileLifecycle({
+    currentScreen,
+    hasOpenModal: hasAnyModalOpen,
+    onCloseModal: handleCloseAllModals,
+    onNavigateBack: handleMobileBack,
+  });
 
   const prevConnectedRef = useRef(false);
   useEffect(() => {

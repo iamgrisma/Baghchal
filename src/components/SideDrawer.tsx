@@ -13,6 +13,7 @@ import {
   LogOut,
   Flag,
   AlertTriangle,
+  Shield,
 } from 'lucide-react';
 import { BoardTheme, GameMode } from '../types';
 
@@ -246,6 +247,16 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               <BookOpen className="w-4 h-4 text-stone-400" />
               <span>Rules of Baghchal</span>
             </button>
+
+            <a
+              href="/privacy.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-850 border border-stone-800 text-stone-200 text-xs font-semibold transition"
+            >
+              <Shield className="w-4 h-4 text-emerald-400" />
+              <span>Privacy Policy</span>
+            </a>
           </div>
         </div>
 

@@ -108,6 +108,17 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
         >
           Close &amp; Play
         </button>
+
+        <div className="mt-3 text-center">
+          <a
+            href="/privacy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-stone-400 hover:text-amber-400 underline transition"
+          >
+            Privacy Policy &amp; Terms
+          </a>
+        </div>
       </div>
     </div>
   );
