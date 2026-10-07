@@ -1,6 +1,6 @@
 export const onRequestGet: PagesFunction = async () => {
   return new Response(
-    JSON.stringify({ status: 'ok', version: '1.0.5', time: new Date().toISOString() }),
+    JSON.stringify({ status: 'ok', version: '1.0.6', time: new Date().toISOString() }),
     {
       headers: {
         'Content-Type': 'application/json',
