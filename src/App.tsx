@@ -21,6 +21,8 @@ import {
 import { getAIMove, getAdaptiveAIDetails } from './game/ai';
 import { sound } from './utils/audio';
 import { loadPlayerProfile, recordMatchResult, savePlayerProfile } from './utils/storage';
+import { triggerNativeHaptic } from './utils/nativeHaptics';
+import { useMobileLifecycle } from './hooks/useMobileLifecycle';
 import { useWebRTCGame } from './hooks/useWebRTCGame';
 import { BaghchalBoard } from './components/BaghchalBoard';
 import { SplashScreen } from './components/SplashScreen';
@@ -110,12 +112,15 @@ export default function App() {
       if (remoteMove.type === 'jump') {
         sound.playAttack();
         triggerTelegramHaptic('heavy');
+        triggerNativeHaptic('heavy');
       } else if (remoteMove.type === 'place') {
         sound.playPlace('goat');
         triggerTelegramHaptic('light');
+        triggerNativeHaptic('light');
       } else {
         sound.playMove(remoteMove.piece);
         triggerTelegramHaptic('medium');
+        triggerNativeHaptic('medium');
       }
 
       setGameState(nextState);
@@ -126,6 +131,21 @@ export default function App() {
     },
     onOpponentDisconnected: () => {
       alert('Your online opponent disconnected.');
+    },
+  });
+
+  // Native Android Hardware Lifecycle Hook
+  useMobileLifecycle({
+    currentScreen,
+    onNavigateBack: () => {
+      if (currentScreen === 'play') {
+        if (mode === 'online') {
+          handleLeaveOnlineRoom();
+        }
+        setCurrentScreen('setup');
+      } else if (currentScreen === 'setup') {
+        setCurrentScreen('splash');
+      }
     },
   });
 
@@ -155,6 +175,7 @@ export default function App() {
       } catch (e) {}
       try {
         triggerTelegramHaptic('success');
+        triggerNativeHaptic('success');
       } catch (e) {}
       setShowOnlineLobby(false);
     }
@@ -256,9 +277,9 @@ export default function App() {
       if (timerMode === 'turn30s') {
         setTurnSecondsLeft((prev) => {
           if (prev <= 1) {
-            // Timeout on turn clock
             if (isUserTurn()) {
               triggerTelegramHaptic('warning');
+              triggerNativeHaptic('warning');
             }
             return 30;
           }
@@ -270,7 +291,6 @@ export default function App() {
           const nextTime = Math.max(0, prev[currentTurn] - 1);
 
           if (nextTime === 0) {
-            // Flag falls: opponent wins on time
             const winningStatus = currentTurn === 'goat' ? 'tiger_won' : 'goat_won';
             setGameState((s) => ({ ...s, status: winningStatus }));
           }
@@ -318,8 +338,10 @@ export default function App() {
 
       if (userWon) {
         triggerTelegramHaptic('success');
+        triggerNativeHaptic('success');
       } else {
         triggerTelegramHaptic('error');
+        triggerNativeHaptic('warning');
       }
 
       const durationSeconds = Math.max(1, Math.round((Date.now() - matchStartTime.current) / 1000));
@@ -415,12 +437,15 @@ export default function App() {
     if (move.type === 'jump') {
       sound.playAttack();
       triggerTelegramHaptic('heavy');
+      triggerNativeHaptic('heavy');
     } else if (move.type === 'place') {
       sound.playPlace('goat');
       triggerTelegramHaptic('light');
+      triggerNativeHaptic('light');
     } else {
       sound.playMove(move.piece);
       triggerTelegramHaptic('medium');
+      triggerNativeHaptic('medium');
     }
 
     setHistoryStack((prev) => [...prev, currentState]);
@@ -431,6 +456,7 @@ export default function App() {
     if (afterTrapped > beforeTrapped) {
       sound.playTrap();
       triggerTelegramHaptic('success');
+      triggerNativeHaptic('success');
     }
 
     setGameState(nextState);
@@ -468,6 +494,7 @@ export default function App() {
     if (pieceAtNode === gameState.turn) {
       setSelectedPos(selectedPos === pos ? null : pos);
       triggerTelegramHaptic('selection');
+      triggerNativeHaptic('light');
       return;
     }
 
@@ -620,7 +647,7 @@ export default function App() {
             <ArrowLeft className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center gap-1.5 bg-stone-900/90 border border-stone-800/90 rounded-xl px-2 py-1 shadow-sm">
+          <div className="flex items-center gap-1.5 bg-stone-900/90 border border-stone-800/90 rounded-xl px-2.5 py-1 shadow-sm">
             <div className="text-base relative">
               {opponentRole === 'tiger' ? '🐅' : '🐐'}
               {gameState.turn === opponentRole && (
