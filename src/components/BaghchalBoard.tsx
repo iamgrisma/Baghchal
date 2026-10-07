@@ -103,9 +103,15 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
   }, [validMoves]);
 
   return (
-    <div className="relative w-full aspect-square max-w-[min(94vw,460px)] mx-auto touch-none select-none flex items-center justify-center">
-      <div className="relative w-full h-full rounded-3xl p-2 sm:p-2.5 shadow-2xl border-2 border-stone-800/80 bg-gradient-to-br from-stone-900 via-stone-950 to-black overflow-hidden flex items-center justify-center">
-        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full overflow-visible">
+    <div
+      className="relative w-full aspect-square mx-auto touch-none select-none flex items-center justify-center p-1 sm:p-2"
+      style={{
+        maxWidth: 'min(94vw, calc(100dvh - 160px), 440px)',
+        maxHeight: 'min(94vw, calc(100dvh - 160px), 440px)',
+      }}
+    >
+      <div className="relative w-full h-full rounded-3xl p-1.5 sm:p-2.5 shadow-2xl border-2 border-stone-800/80 bg-gradient-to-br from-stone-900 via-stone-950 to-black overflow-hidden flex items-center justify-center gpu-accelerated">
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full overflow-visible touch-none select-none">
           <defs>
             {/* Realistic Token Drop Shadows */}
             <filter id="pieceShadow" x="-30%" y="-30%" width="160%" height="160%">
@@ -253,8 +259,12 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             return (
               <g
                 key={`node-${idx}`}
-                onClick={() => isInteractive && onNodeClick(idx)}
-                className={isInteractive ? 'cursor-pointer' : ''}
+                onPointerDown={(e) => {
+                  if (!isInteractive) return;
+                  e.preventDefault();
+                  onNodeClick(idx);
+                }}
+                className={isInteractive ? 'cursor-pointer select-none touch-none' : 'select-none touch-none'}
               >
                 {/* Brass Rivet Stud */}
                 <circle cx={pos.x} cy={pos.y} r="5" fill={currentTheme.studColor} stroke={currentTheme.studRing} strokeWidth="1.6" />
@@ -342,8 +352,8 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                   </g>
                 )}
 
-                {/* Touch Hitbox */}
-                <circle cx={pos.x} cy={pos.y} r="25" fill="transparent" className="cursor-pointer active:opacity-20" />
+                {/* Generous 56px Mobile Touch Hitbox */}
+                <circle cx={pos.x} cy={pos.y} r="28" fill="transparent" className="cursor-pointer select-none touch-none" />
               </g>
             );
           })}

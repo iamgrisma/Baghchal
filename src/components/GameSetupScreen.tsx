@@ -55,9 +55,15 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
   const adaptiveDetails = getAdaptiveAIDetails(profile);
 
   return (
-    <div className="relative min-h-screen w-full flex flex-col justify-between items-center bg-stone-950 text-stone-100 select-none overflow-y-auto">
+    <div
+      className="fixed inset-0 w-full h-full h-[100dvh] max-h-[100dvh] flex flex-col items-center bg-stone-950 text-stone-100 select-none overflow-hidden"
+      style={{
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}
+    >
       {/* Android Material Top App Bar */}
-      <header className="w-full max-w-md h-16 px-4 flex items-center justify-between bg-stone-900/90 border-b border-stone-800/80 sticky top-0 z-20 backdrop-blur-md">
+      <header className="w-full max-w-md h-16 px-4 flex items-center justify-between shrink-0 bg-stone-900/95 border-b border-stone-800/80 z-20 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <button
             id="setup-back-btn"
@@ -85,7 +91,7 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
       </header>
 
       {/* Main Material 3 Content Container */}
-      <main className="w-full max-w-md flex flex-col gap-4 p-4 my-auto z-10">
+      <main className="w-full max-w-md flex-1 overflow-y-auto modal-scroll flex flex-col gap-4 p-4 z-10">
         {/* Section 1: Mode Segmented Button */}
         <section className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 px-0.5">
@@ -328,23 +334,19 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
           </div>
         </section>
 
-        {/* Start Game Action Button (Android M3 Filled Button) */}
-        <div className="pt-2">
-          <button
-            id="setup-start-game-btn"
-            type="button"
-            onClick={onStartGame}
-            className="w-full h-13 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-stone-950 font-bold text-sm tracking-wide shadow-md transition flex items-center justify-center gap-2 active:scale-[0.99]"
-          >
-            <Play className="w-4 h-4 fill-stone-950" />
-            <span>{mode === 'online' ? 'Enter Room' : 'Start Match'}</span>
-          </button>
-        </div>
       </main>
 
-      {/* Android Subtle Bottom Safe Area */}
-      <footer className="w-full max-w-md text-center text-[11px] text-stone-500 py-2 border-t border-stone-900">
-        Baghchal Board System
+      {/* Fixed Sticky Action Bar */}
+      <footer className="w-full max-w-md shrink-0 p-3 bg-stone-950/95 border-t border-stone-900 backdrop-blur-md z-20">
+        <button
+          id="setup-start-game-btn"
+          type="button"
+          onClick={onStartGame}
+          className="w-full h-12 rounded-2xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-stone-950 font-black text-sm tracking-wide shadow-xl transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+        >
+          <Play className="w-4 h-4 fill-stone-950" />
+          <span>{mode === 'online' ? 'Enter Online Arena' : 'Start Match'}</span>
+        </button>
       </footer>
     </div>
   );

@@ -14,7 +14,7 @@ class SoundEngine {
     }
   }
 
-  private init() {
+  public init() {
     if (!this.ctx && typeof window !== 'undefined') {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
@@ -492,3 +492,13 @@ class SoundEngine {
 }
 
 export const sound = new SoundEngine();
+
+if (typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    sound.init();
+    window.removeEventListener('pointerdown', unlockAudio);
+    window.removeEventListener('touchstart', unlockAudio);
+  };
+  window.addEventListener('pointerdown', unlockAudio, { passive: true });
+  window.addEventListener('touchstart', unlockAudio, { passive: true });
+}

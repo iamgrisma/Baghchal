@@ -1,33 +1,92 @@
 @import "tailwindcss";
 
+/* 1. Core Native App Constraints */
 html, body, #root {
   height: 100%;
   height: 100dvh;
   max-height: 100dvh;
-  width: 100%;
+  width: 100vw;
+  max-width: 100vw;
   overflow: hidden;
   margin: 0;
   padding: 0;
+  position: fixed;
+  inset: 0;
+  
+  /* Kill all browser web defaults */
   touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-  overscroll-behavior: none;
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-user-drag: none !important;
+  overscroll-behavior: none !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 2. Hardware Acceleration & Snappy Rendering */
+* {
+  -webkit-tap-highlight-color: transparent !important;
+  box-sizing: border-box;
+}
+
+button, a, [role="button"], input {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent !important;
+  outline: none !important;
+}
+
+button:active {
+  transform: scale(0.97);
+  transition: transform 0.05s ease;
+}
+
+/* 3. Smooth Modal & Sub-panel Scrolling (Restricted) */
+.modal-scroll {
+  touch-action: pan-y !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ultra-subtle custom scrollbar for modals */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 113, 108, 0.3);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 113, 108, 0.6);
+}
+
+/* 4. GPU-Accelerated Game Animations */
+.gpu-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform, opacity;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: scale(0.96);
+    transform: scale(0.96) translateZ(0);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1) translateZ(0);
   }
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes spinSlow {
@@ -41,4 +100,13 @@ html, body, #root {
 
 .animate-spin-slow {
   animation: spinSlow 8s linear infinite;
+  transform-origin: center;
+}
+
+/* Safe area padding utilities */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
