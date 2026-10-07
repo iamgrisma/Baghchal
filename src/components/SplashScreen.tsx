@@ -87,7 +87,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
       {/* Footer System Info */}
       <footer className="w-full max-w-md text-center text-xs text-stone-500 py-3 border-t border-stone-900">
-        Version 1.0.9 · Resilient Dual-Signaling & P2P Engine
+        Version 1.0.10 · Decentralized Blockchain Ledger & P2P Engine
       </footer>
     </div>
   );
