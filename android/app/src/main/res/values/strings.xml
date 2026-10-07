@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Baghchal</string>
+    <string name="title_activity_main">Baghchal</string>
+    <string name="package_name">np.com.grisma.baghchal</string>
+    <string name="custom_url_scheme">np.com.grisma.baghchal</string>
+</resources>
