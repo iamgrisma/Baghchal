@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { GameState, Move, OnlineRoomInfo, PlayerRole } from '../types';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { Move, GameState, PlayerRole, OnlineRoomInfo } from '../types';
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun2.l.google.com:19302' },
   ],
 };
 
@@ -15,25 +15,32 @@ const MATCHMAKING_TOPIC = 'baghchal_matchmaking_v2';
 
 interface UseWebRTCGameProps {
   playerName: string;
+  gameState?: GameState;
   onRemoteMove: (move: Move, nextState: GameState) => void;
   onRemoteRestart: () => void;
-  onOpponentDisconnected: () => void;
+  onOpponentForfeitWin?: () => void;
 }
 
 export function useWebRTCGame({
   playerName,
+  gameState,
   onRemoteMove,
   onRemoteRestart,
-  onOpponentDisconnected,
+  onOpponentForfeitWin,
 }: UseWebRTCGameProps) {
   const [roomInfo, setRoomInfo] = useState<OnlineRoomInfo | null>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [matchStatusText, setMatchStatusText] = useState('');
+  const [matchStatusText, setMatchStatusText] = useState('Select a mode to play');
   const [dataChannelOpen, setDataChannelOpen] = useState(false);
+  const [isOpponentDisconnected, setIsOpponentDisconnected] = useState(false);
+  const [disconnectSecondsLeft, setDisconnectSecondsLeft] = useState(30);
   const [playerId] = useState(() => `p_${Math.random().toString(36).substring(2, 9)}`);
 
   const playerNameRef = useRef(playerName);
   playerNameRef.current = playerName;
+
+  const currentGameStateRef = useRef<GameState | undefined>(gameState);
+  currentGameStateRef.current = gameState;
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
@@ -41,11 +48,14 @@ export function useWebRTCGame({
   const matchWsRef = useRef<WebSocket | null>(null);
   const matchSeekIntervalRef = useRef<number | null>(null);
   const matchTimeoutRef = useRef<number | null>(null);
+  const redisPollIntervalRef = useRef<number | null>(null);
+  const forfeitCountdownRef = useRef<number | null>(null);
 
   const currentRoomIdRef = useRef<string | null>(null);
   const roleRef = useRef<PlayerRole | null>(null);
   const isInitiatorRef = useRef(false);
   const localOfferRef = useRef<any>(null);
+  const lastSeenMoveCountRef = useRef(0);
 
   const getCleanTopic = (roomId: string) => {
     const clean = roomId.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -53,19 +63,67 @@ export function useWebRTCGame({
   };
 
   const publishToTopic = async (topic: string, data: any) => {
+    // 1. Primary: Fast Realtime PubSub
     try {
-      await fetch(`${NTFY_BASE}/${topic}`, {
+      fetch(`${NTFY_BASE}/${topic}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      });
-    } catch (e) {
-      console.warn('Publish error:', e);
+      }).catch(() => {});
+    } catch (e) {}
+
+    // 2. Secondary Fallback: Upstash Redis
+    if (currentRoomIdRef.current) {
+      try {
+        fetch('/api/signaling/redis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomId: currentRoomIdRef.current,
+            action: 'publish',
+            sender: isInitiatorRef.current ? 'host' : 'guest',
+            payload: data,
+          }),
+        }).catch(() => {});
+      } catch (e) {}
     }
   };
 
-  // Clean up all connections, WebSockets, and timers
+  // 30-Second Forfeit Countdown Management
+  const startForfeitCountdown = useCallback(() => {
+    if (forfeitCountdownRef.current) return;
+    setIsOpponentDisconnected(true);
+    setDisconnectSecondsLeft(30);
+
+    forfeitCountdownRef.current = window.setInterval(() => {
+      setDisconnectSecondsLeft((prev) => {
+        if (prev <= 1) {
+          if (forfeitCountdownRef.current) {
+            clearInterval(forfeitCountdownRef.current);
+            forfeitCountdownRef.current = null;
+          }
+          setIsOpponentDisconnected(false);
+          setMatchStatusText('Opponent forfeited after 30s disconnection. You win!');
+          onOpponentForfeitWin?.();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [onOpponentForfeitWin]);
+
+  const cancelForfeitCountdown = useCallback(() => {
+    setIsOpponentDisconnected(false);
+    setDisconnectSecondsLeft(30);
+    if (forfeitCountdownRef.current) {
+      clearInterval(forfeitCountdownRef.current);
+      forfeitCountdownRef.current = null;
+    }
+  }, []);
+
+  // Clean up WebRTC, WebSockets, Redis polling, and timers
   const cleanupConnection = () => {
+    cancelForfeitCountdown();
     if (matchSeekIntervalRef.current) {
       clearInterval(matchSeekIntervalRef.current);
       matchSeekIntervalRef.current = null;
@@ -73,6 +131,10 @@ export function useWebRTCGame({
     if (matchTimeoutRef.current) {
       clearTimeout(matchTimeoutRef.current);
       matchTimeoutRef.current = null;
+    }
+    if (redisPollIntervalRef.current) {
+      clearInterval(redisPollIntervalRef.current);
+      redisPollIntervalRef.current = null;
     }
     if (matchWsRef.current) {
       try {
@@ -105,6 +167,7 @@ export function useWebRTCGame({
     currentRoomIdRef.current = null;
     roleRef.current = null;
     localOfferRef.current = null;
+    lastSeenMoveCountRef.current = 0;
   };
 
   useEffect(() => {
@@ -128,7 +191,6 @@ export function useWebRTCGame({
       ws.onopen = () => {
         setMatchStatusText('Searching for an opponent...');
 
-        // Broadcast seek packet immediately
         const seekPacket = {
           type: 'seek',
           playerId,
@@ -138,12 +200,10 @@ export function useWebRTCGame({
         };
         publishToTopic(MATCHMAKING_TOPIC, seekPacket);
 
-        // Ping seek packet every 2.5 seconds while waiting
         matchSeekIntervalRef.current = window.setInterval(() => {
           publishToTopic(MATCHMAKING_TOPIC, seekPacket);
         }, 2500);
 
-        // Timeout after 45 seconds if no match found
         matchTimeoutRef.current = window.setTimeout(() => {
           if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
           setIsSearching(false);
@@ -157,9 +217,7 @@ export function useWebRTCGame({
           if (envelope.event !== 'message') return;
           const msg = JSON.parse(envelope.message);
 
-          // Case A: Another player is seeking match
           if (msg.type === 'seek' && msg.playerId !== playerId) {
-            // Player who has been waiting longer (or lower ID on tie) proposes the match
             if (myJoinTime > msg.timestamp || (myJoinTime === msg.timestamp && playerId > msg.playerId)) {
               const code = Math.random().toString(36).substring(2, 7).toUpperCase();
               const roomId = `bc_${code}`;
@@ -178,7 +236,6 @@ export function useWebRTCGame({
                 roleForMe = 'tiger';
               }
 
-              // Announce match to both players
               publishToTopic(MATCHMAKING_TOPIC, {
                 type: 'match_found',
                 seekerId: msg.playerId,
@@ -190,7 +247,6 @@ export function useWebRTCGame({
                 nameProposer: playerNameRef.current,
               });
 
-              // Enter room
               if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
               if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
               if (matchWsRef.current) matchWsRef.current.close();
@@ -200,7 +256,6 @@ export function useWebRTCGame({
             }
           }
 
-          // Case B: A match announcement for me was received
           if (msg.type === 'match_found' && msg.seekerId === playerId) {
             if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
             if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
@@ -227,9 +282,6 @@ export function useWebRTCGame({
     }
   };
 
-  /**
-   * Cancel matchmaking search
-   */
   const cancelAutoMatch = () => {
     cleanupConnection();
     setMatchStatusText('Search cancelled.');
@@ -248,7 +300,7 @@ export function useWebRTCGame({
   };
 
   /**
-   * 3. ROOM SETUP & WEBRTC PEER CONNECTION + REALTIME PUBSUB
+   * 3. ROOM SETUP & WEBRTC P2P + MULTI-TIER SIGNALING
    */
   const setupRoom = async (
     roomId: string,
@@ -279,11 +331,31 @@ export function useWebRTCGame({
 
     const roomTopic = getCleanTopic(roomId);
 
-    // 1. Connect Room WebSocket for instant signaling & fallback game sync
+    // 1. Realtime Primary WebSocket
     const ws = new WebSocket(`${NTFY_WS_BASE}/${roomTopic}/ws`);
     roomWsRef.current = ws;
 
-    // 2. Setup WebRTC PeerConnection
+    // 2. Upstash Redis Fallback Polling (polls every 2.5s)
+    redisPollIntervalRef.current = window.setInterval(async () => {
+      if (dcRef.current && dcRef.current.readyState === 'open') return;
+      try {
+        const res = await fetch('/api/signaling/redis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomId,
+            action: 'poll',
+            sender: isInitiator ? 'host' : 'guest',
+          }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        for (const msgItem of data.messages || []) {
+          handleIncomingSignal(msgItem.payload);
+        }
+      } catch (e) {}
+    }, 2500);
+
     try {
       const pc = new RTCPeerConnection(RTC_CONFIG);
       pcRef.current = pc;
@@ -301,16 +373,17 @@ export function useWebRTCGame({
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'connected') {
           setDataChannelOpen(true);
+          cancelForfeitCountdown();
           setRoomInfo((prev) => (prev ? { ...prev, connected: true, usingP2P: true } : null));
           setMatchStatusText('Direct P2P WebRTC Connected (<10ms)!');
         } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
           setDataChannelOpen(false);
+          startForfeitCountdown();
           setRoomInfo((prev) => (prev ? { ...prev, usingP2P: false } : null));
         }
       };
 
       if (isInitiator) {
-        // Host creates WebRTC DataChannel
         const dc = pc.createDataChannel('baghchal-sync', { ordered: true });
         attachDataChannel(dc);
 
@@ -319,7 +392,6 @@ export function useWebRTCGame({
         localOfferRef.current = offer;
 
         ws.onopen = () => {
-          // Announce room ready
           publishToTopic(roomTopic, {
             type: 'room_ready',
             sender: 'host',
@@ -328,13 +400,11 @@ export function useWebRTCGame({
           });
         };
       } else {
-        // Guest listens for incoming data channel
         pc.ondatachannel = (e) => {
           attachDataChannel(e.channel);
         };
 
         ws.onopen = () => {
-          // Announce guest joined
           publishToTopic(roomTopic, {
             type: 'guest_joined',
             sender: 'guest',
@@ -343,112 +413,144 @@ export function useWebRTCGame({
         };
       }
 
-      // Handle incoming messages on Room WebSocket
+      const handleIncomingSignal = async (msg: any) => {
+        if (!msg || !pcRef.current) return;
+        const pcInstance = pcRef.current;
+
+        if (msg.type === 'guest_joined' && isInitiator) {
+          setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
+          setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
+          if (localOfferRef.current) {
+            publishToTopic(roomTopic, {
+              type: 'offer',
+              sender: 'host',
+              playerName: playerNameRef.current,
+              offer: localOfferRef.current,
+            });
+          }
+        }
+
+        if ((msg.type === 'room_ready' || msg.type === 'offer') && !isInitiator && msg.offer) {
+          setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
+          setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
+          if (pcInstance.signalingState !== 'stable') {
+            await pcInstance.setRemoteDescription(new RTCSessionDescription(msg.offer));
+            const answer = await pcInstance.createAnswer();
+            await pcInstance.setLocalDescription(answer);
+            publishToTopic(roomTopic, {
+              type: 'answer',
+              sender: 'guest',
+              playerName: playerNameRef.current,
+              answer,
+            });
+          }
+        }
+
+        if (msg.type === 'answer' && isInitiator && msg.answer) {
+          setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName || prev.opponentName, connected: true } : null));
+          if (pcInstance.signalingState === 'have-local-offer') {
+            await pcInstance.setRemoteDescription(new RTCSessionDescription(msg.answer));
+          }
+        }
+
+        if (msg.type === 'candidate' && msg.candidate) {
+          const expectedSender = isInitiator ? 'guest' : 'host';
+          if (msg.sender === expectedSender && pcInstance.remoteDescription) {
+            try {
+              await pcInstance.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            } catch (e) {}
+          }
+        }
+
+        if (msg.type === 'move') {
+          const expectedSender = isInitiator ? 'guest' : 'host';
+          if (msg.sender === expectedSender) {
+            onRemoteMove(msg.move, msg.state);
+          }
+        }
+
+        if (msg.type === 'restart') {
+          const expectedSender = isInitiator ? 'guest' : 'host';
+          if (msg.sender === expectedSender) {
+            onRemoteRestart();
+          }
+        }
+      };
+
       ws.onmessage = async (event) => {
         try {
           const envelope = JSON.parse(event.data);
           if (envelope.event !== 'message') return;
           const msg = JSON.parse(envelope.message);
-
-          // A. Host receives Guest Joined
-          if (msg.type === 'guest_joined' && isInitiator) {
-            setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
-            setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
-
-            // Re-send offer to newly joined guest
-            if (localOfferRef.current) {
-              publishToTopic(roomTopic, {
-                type: 'offer',
-                sender: 'host',
-                playerName: playerNameRef.current,
-                offer: localOfferRef.current,
-              });
-            }
-          }
-
-          // B. Guest receives Host Room Ready or Offer
-          if ((msg.type === 'room_ready' || msg.type === 'offer') && !isInitiator && msg.offer) {
-            setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
-            setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
-
-            if (pc.signalingState !== 'stable') {
-              await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-
-              publishToTopic(roomTopic, {
-                type: 'answer',
-                sender: 'guest',
-                playerName: playerNameRef.current,
-                answer,
-              });
-            }
-          }
-
-          // C. Host receives Guest Answer
-          if (msg.type === 'answer' && isInitiator && msg.answer) {
-            setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName || prev.opponentName, connected: true } : null));
-            if (pc.signalingState === 'have-local-offer') {
-              await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-            }
-          }
-
-          // D. ICE Candidates Exchange
-          if (msg.type === 'candidate' && msg.candidate) {
-            const expectedSender = isInitiator ? 'guest' : 'host';
-            if (msg.sender === expectedSender && pc.remoteDescription) {
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-              } catch (e) {}
-            }
-          }
-
-          // E. Move Broadcast (WebSocket fallback if DataChannel is not connected)
-          if (msg.type === 'move') {
-            const expectedSender = isInitiator ? 'guest' : 'host';
-            if (msg.sender === expectedSender) {
-              onRemoteMove(msg.move, msg.state);
-            }
-          }
-
-          // F. Restart Broadcast
-          if (msg.type === 'restart') {
-            const expectedSender = isInitiator ? 'guest' : 'host';
-            if (msg.sender === expectedSender) {
-              onRemoteRestart();
-            }
-          }
+          handleIncomingSignal(msg);
         } catch (e) {}
       };
     } catch (err) {
-      console.error('PeerConnection error:', err);
+      console.error('PeerConnection setup error:', err);
     }
   };
 
   /**
-   * Attach DataChannel listeners
+   * 4. DATACHANNEL & DELTA SYNCHRONIZATION
    */
   const attachDataChannel = (dc: RTCDataChannel) => {
     dcRef.current = dc;
 
     dc.onopen = () => {
       setDataChannelOpen(true);
+      cancelForfeitCountdown();
       setRoomInfo((prev) => (prev ? { ...prev, connected: true, usingP2P: true } : null));
       setMatchStatusText('Direct P2P WebRTC Connected (<10ms)!');
+
+      // Request delta sync on reconnect
+      const currentHistory = currentGameStateRef.current?.moveHistory || [];
+      try {
+        dc.send(
+          JSON.stringify({
+            type: 'sync_request',
+            lastKnownMoveCount: currentHistory.length,
+          })
+        );
+      } catch (e) {}
     };
 
     dc.onclose = () => {
       setDataChannelOpen(false);
+      startForfeitCountdown();
       setRoomInfo((prev) => (prev ? { ...prev, usingP2P: false } : null));
     };
 
     dc.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
+
         if (payload.type === 'move') {
+          if (payload.state?.moveHistory) {
+            lastSeenMoveCountRef.current = payload.state.moveHistory.length;
+          }
           onRemoteMove(payload.move, payload.state);
         } else if (payload.type === 'restart') {
+          lastSeenMoveCountRef.current = 0;
           onRemoteRestart();
+        } else if (payload.type === 'sync_request') {
+          // Send missing move if peer made 1 move while offline
+          const history = currentGameStateRef.current?.moveHistory || [];
+          const peerCount = payload.lastKnownMoveCount || 0;
+          if (history.length > peerCount && currentGameStateRef.current) {
+            const missingMoves = history.slice(peerCount);
+            dc.send(
+              JSON.stringify({
+                type: 'sync_response',
+                missingMoves,
+                fullState: currentGameStateRef.current,
+              })
+            );
+          }
+        } else if (payload.type === 'sync_response') {
+          if (payload.missingMoves && payload.missingMoves.length > 0 && payload.fullState) {
+            const lastMove = payload.missingMoves[payload.missingMoves.length - 1];
+            onRemoteMove(lastMove, payload.fullState);
+          }
         }
       } catch (err) {
         console.error('DataChannel parse error:', err);
@@ -457,9 +559,13 @@ export function useWebRTCGame({
   };
 
   /**
-   * Broadcast move to remote opponent via WebRTC DataChannel (P2P) + Realtime PubSub fallback
+   * 5. BROADCAST MOVE (Direct WebRTC 0-cost with PubSub fallback)
    */
   const sendMove = (move: Move, nextState: GameState) => {
+    if (nextState?.moveHistory) {
+      lastSeenMoveCountRef.current = nextState.moveHistory.length;
+    }
+
     const payload = {
       type: 'move',
       sender: isInitiatorRef.current ? 'host' : 'guest',
@@ -467,14 +573,12 @@ export function useWebRTCGame({
       state: nextState,
     };
 
-    // 1. Direct WebRTC DataChannel (instant sub-10ms delivery)
     if (dcRef.current && dcRef.current.readyState === 'open') {
       try {
         dcRef.current.send(JSON.stringify(payload));
       } catch (err) {}
     }
 
-    // 2. Realtime PubSub broadcast (instant sub-50ms reliable delivery)
     if (currentRoomIdRef.current) {
       const topic = getCleanTopic(currentRoomIdRef.current);
       publishToTopic(topic, payload);
@@ -482,9 +586,10 @@ export function useWebRTCGame({
   };
 
   /**
-   * Broadcast game restart
+   * 6. BROADCAST RESTART
    */
   const sendRestart = () => {
+    lastSeenMoveCountRef.current = 0;
     const payload = {
       type: 'restart',
       sender: isInitiatorRef.current ? 'host' : 'guest',
@@ -507,6 +612,8 @@ export function useWebRTCGame({
     isSearching,
     matchStatusText,
     dataChannelOpen,
+    isOpponentDisconnected,
+    disconnectSecondsLeft,
     startAutoMatch,
     cancelAutoMatch,
     joinCustomRoom,
