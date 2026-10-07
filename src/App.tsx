@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameMode, GameState, Move, PlayerRole, AIDifficulty, PlayerProfile } from './types';
+import { GameMode, GameState, Move, PlayerRole, AIDifficulty, PlayerProfile, BoardTheme } from './types';
 import {
   createInitialGameState,
   applyMove,
@@ -15,6 +15,7 @@ import { useWebRTCGame } from './hooks/useWebRTCGame';
 import { BaghchalBoard } from './components/BaghchalBoard';
 import { SplashScreen } from './components/SplashScreen';
 import { GameSetupScreen } from './components/GameSetupScreen';
+import { SideDrawer } from './components/SideDrawer';
 import { RulesModal } from './components/RulesModal';
 import { ProfileModal } from './components/ProfileModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
@@ -22,16 +23,7 @@ import { OnlineLobbyModal } from './components/OnlineLobbyModal';
 import { GameOverModal } from './components/GameOverModal';
 import { LedgerFlyMenu } from './components/LedgerFlyMenu';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import {
-  Volume2,
-  VolumeX,
-  RotateCcw,
-  RefreshCw,
-  ArrowLeft,
-  Trophy,
-  Award,
-  Link2,
-} from 'lucide-react';
+import { Menu, RotateCcw } from 'lucide-react';
 import {
   initTelegramWebApp,
   isTelegramWebApp,
@@ -53,16 +45,18 @@ export default function App() {
   const [aiUserRole, setAiUserRole] = useState<PlayerRole>('goat');
   const [difficulty, setDifficulty] = useState<AIDifficulty>('medium');
   const [profile, setProfile] = useState<PlayerProfile>(loadPlayerProfile);
+  const [boardTheme, setBoardTheme] = useState<BoardTheme>('classic');
 
-  // Blockchain Ledger State (Audit & Fly Menu Log)
+  // Blockchain Ledger State
   const [localLedger] = useState(() => new BaghchalLedger());
   const [ledgerChain, setLedgerChain] = useState<LedgerBlock[]>([]);
   const [showLedgerMenu, setShowLedgerMenu] = useState(false);
 
-  // Audio mute
+  // Audio state
   const [isMuted, setIsMuted] = useState(() => sound.isMuted());
 
-  // Modals
+  // Fly Menu SideDrawer & Modals
+  const [showSideMenu, setShowSideMenu] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -70,12 +64,12 @@ export default function App() {
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [isTelegram, setIsTelegram] = useState(false);
 
-  // Timer reference for match duration
+  // Match start timestamp
   const matchStartTime = useRef<number>(Date.now());
   const gameStateRef = useRef<GameState>(gameState);
   gameStateRef.current = gameState;
 
-  // WebRTC Game Hook with Upstash Redis fallback & 30s forfeit handling
+  // WebRTC Game Hook
   const {
     roomInfo,
     isSearching,
@@ -225,7 +219,6 @@ export default function App() {
     return false;
   }, [gameState.status, gameState.turn, mode, isAiThinking, aiUserRole, roomInfo]);
 
-  // Compute strictly valid moves using core rules engine
   const currentValidMoves = useCallback((): Move[] => {
     if (!isUserTurn()) return [];
 
@@ -263,7 +256,7 @@ export default function App() {
     matchStartTime.current = Date.now();
   }, [localLedger]);
 
-  // Handle Game Over Flow & Global Leaderboard update
+  // Handle Game Over
   useEffect(() => {
     if (gameState.status !== 'playing') {
       setShowGameOverModal(true);
@@ -373,11 +366,8 @@ export default function App() {
 
   const executeMove = async (move: Move) => {
     const currentState = gameStateRef.current;
-
-    // 1. Standard deterministic rules engine execution
     const nextState = applyMove(currentState, move);
 
-    // 2. Mint and append Blockchain Ledger Block for Audit/FlyMenu
     const capturedPos = move.type === 'jump' ? move.captured : undefined;
     const block = await localLedger.createBlock(currentState.turn, move, capturedPos);
     await localLedger.verifyAndAppendBlock(block);
@@ -551,116 +541,87 @@ export default function App() {
     );
   }
 
+  const isOpponentTurn = gameState.status === 'playing' && !isUserTurn();
+
   return (
     <main
-      className="fixed inset-0 w-full h-full h-[100dvh] max-h-[100dvh] bg-stone-950 text-stone-100 flex flex-col justify-between overflow-hidden select-none touch-none px-2 py-1 xs:py-1.5"
+      className="fixed inset-0 w-full h-full h-[100dvh] max-h-[100dvh] bg-stone-950 text-stone-100 flex flex-col justify-between overflow-hidden select-none touch-none"
       style={{ height: '100dvh', maxHeight: '100dvh' }}
     >
-      {/* 1. TOP GAME HUD */}
-      <header className="w-full max-w-lg mx-auto flex items-center justify-between gap-1.5 px-1 py-1 shrink-0">
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => {
-              if (mode === 'online') {
-                handleLeaveOnlineRoom();
-              }
-              setCurrentScreen('setup');
-            }}
-            className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-400 border border-stone-800 text-xs transition active:scale-95 shadow-sm"
-            title="Back to Game Setup"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-
-          <div className="flex items-center gap-1.5 bg-stone-900/90 border border-stone-800/90 rounded-xl px-2.5 py-1 shadow-sm">
-            <div className="text-base relative">
-              {opponentRole === 'tiger' ? '🐅' : '🐐'}
-              {gameState.turn === opponentRole && (
-                <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[11px] font-bold text-stone-200 leading-tight">
-                {mode === 'ai'
-                  ? `AI (${difficulty === 'adaptive' ? getAdaptiveAIDetails(profile).tierLabel : difficulty})`
-                  : mode === 'online' && roomInfo
-                  ? roomInfo.opponentName
-                  : opponentRole === 'tiger'
-                  ? 'Tiger Player'
-                  : 'Goat Player'}
+      {/* 1. TOP APP BAR: Opponent Card + Turn Pill + Side Menu Toggle */}
+      <header className="w-full max-w-lg mx-auto h-16 px-3 flex items-center justify-between shrink-0 bg-stone-950/90 border-b border-stone-855 z-10 backdrop-blur-md">
+        {/* Opponent Identity Card */}
+        <div
+          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-2xl border transition ${
+            isOpponentTurn
+              ? 'bg-stone-900 border-amber-500/70 ring-1 ring-amber-500/40 shadow-sm'
+              : 'bg-stone-900/60 border-stone-800'
+          }`}
+        >
+          <div className="text-base relative">
+            {opponentRole === 'tiger' ? '🐅' : '🐐'}
+            {isOpponentTurn && (
+              <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
               </span>
-              {opponentRole === 'tiger' ? (
-                <div className="flex items-center gap-1 text-[9px] text-amber-400 font-medium">
-                  <span>Trapped:</span>
-                  <strong className="font-mono text-stone-100">{trappedInfo.trappedCount}/4</strong>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-[9px] text-stone-400 font-medium">
-                  <span>Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong></span>
-                  <span>Eaten: <strong className="font-mono text-red-400">{gameState.goatsCaptured}/5</strong></span>
-                </div>
-              )}
-            </div>
+            )}
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[11px] font-bold text-stone-200 leading-tight">
+              {mode === 'ai'
+                ? `AI (${difficulty === 'adaptive' ? getAdaptiveAIDetails(profile).tierLabel : difficulty})`
+                : mode === 'online' && roomInfo
+                ? roomInfo.opponentName
+                : opponentRole === 'tiger'
+                ? 'Tiger Player'
+                : 'Goat Player'}
+            </span>
+            {opponentRole === 'tiger' ? (
+              <span className="text-[9px] text-amber-400 font-medium">
+                Trapped: <strong className="font-mono text-stone-100">{trappedInfo.trappedCount}/4</strong>
+              </span>
+            ) : (
+              <span className="text-[9px] text-stone-400 font-medium">
+                Res: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong> · Eat: <strong className="font-mono text-red-400">{gameState.goatsCaptured}/5</strong>
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Center: Turn Status Pill */}
+        {/* Center: Turn Status Guidance */}
         <div className="flex items-center">
           {gameState.status !== 'playing' ? (
             <span className="px-3 py-1 rounded-full text-[11px] font-black bg-amber-500 text-stone-950 shadow">
               {gameState.status === 'goat_won' ? 'Goats Won! 🏆' : 'Tigers Won! 🏆'}
             </span>
           ) : isAiThinking ? (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
               <span>Thinking...</span>
             </span>
           ) : isUserTurn() ? (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-emerald-500 text-stone-950 ring-2 ring-emerald-400/50 shadow-sm">
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-500 text-stone-950 shadow-sm">
               <span>{userRole === 'goat' ? '🐐 Your Turn' : '🐅 Your Turn'}</span>
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-stone-900 text-stone-300 border border-stone-800 shadow-sm">
-              <span>{opponentRole === 'goat' ? '🐐' : '🐅'} Opponent Turn</span>
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-stone-900 text-stone-400 border border-stone-800">
+              <span>{opponentRole === 'goat' ? '🐐 Opponent' : '🐅 Opponent'}</span>
             </span>
           )}
         </div>
 
-        {/* Right: Quick Action Icons */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setShowLedgerMenu(true)}
-            className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-400 border border-stone-800 text-xs transition active:scale-95 shadow-sm relative"
-            title="Inspect Blockchain Ledger"
-          >
-            <Link2 className="w-4 h-4" />
-            {activeChain.length > 0 && (
-              <span className="absolute -top-1 -right-1 px-1 min-w-3.5 h-3.5 rounded-full bg-amber-500 text-stone-950 font-mono text-[9px] font-black flex items-center justify-center">
-                {activeChain.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setShowLeaderboard(true)}
-            className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-400 border border-stone-800 text-xs transition active:scale-95 shadow-sm"
-            title="Global Leaderboard"
-          >
-            <Trophy className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleToggleSound}
-            className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 text-xs transition active:scale-95 shadow-sm"
-            title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
-          >
-            {isMuted ? <VolumeX className="w-4 h-4 text-stone-500" /> : <Volume2 className="w-4 h-4 text-amber-400" />}
-          </button>
-        </div>
+        {/* Right: Clean Hamburger Flyout Menu Toggle */}
+        <button
+          onClick={() => setShowSideMenu(true)}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center text-stone-300 hover:text-white bg-stone-900 border border-stone-800 active:bg-stone-850 transition shadow-sm"
+          title="Open Menu"
+        >
+          <Menu className="w-5 h-5 text-amber-400" />
+        </button>
       </header>
 
-      {/* Opponent Disconnection / 30s Forfeit Warning Banner */}
+      {/* Opponent Disconnection Warning */}
       {mode === 'online' && isOpponentDisconnected && (
         <div className="w-full max-w-lg mx-auto mb-1 flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-200 text-xs shadow-lg animate-pulse z-20">
           <div className="flex items-center gap-2">
@@ -673,8 +634,8 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. Board Arena */}
-      <section className="flex-1 flex items-center justify-center w-full max-w-lg mx-auto overflow-hidden p-0.5 sm:p-1">
+      {/* 2. THE CLEAN GAME ARENA */}
+      <section className="flex-1 flex items-center justify-center w-full max-w-lg mx-auto overflow-hidden p-1">
         <BaghchalBoard
           board={gameState.board}
           turn={gameState.turn}
@@ -685,81 +646,83 @@ export default function App() {
           lastMove={gameState.lastMove}
           isInteractive={isUserTurn()}
           onNodeClick={handleNodeClick}
+          theme={boardTheme}
         />
       </section>
 
-      {/* 3. Bottom Player Stats & Controls */}
-      <footer className="w-full max-w-lg mx-auto flex flex-col gap-1.5 shrink-0 px-1 pb-1">
-        <div className="flex items-center justify-between bg-stone-900/90 border border-stone-800/80 rounded-xl px-2.5 py-1 text-xs shadow-sm">
-          <div className="flex items-center gap-1.5">
-            <span className="text-base">{userRole === 'goat' ? '🐐' : '🐅'}</span>
-            <span className="font-bold text-stone-200">
-              {profile.name || 'You'} {userRole === 'goat' ? '(Goats)' : '(Tigers)'}
+      {/* 3. BOTTOM APP BAR: Player Card + Quick Undo Floating Button */}
+      <footer className="w-full max-w-lg mx-auto h-16 px-3 flex items-center justify-between shrink-0 bg-stone-950/90 border-t border-stone-850 z-10 backdrop-blur-md">
+        <div
+          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-2xl border transition ${
+            isUserTurn()
+              ? 'bg-stone-900 border-emerald-500/70 ring-1 ring-emerald-500/40 shadow-sm'
+              : 'bg-stone-900/60 border-stone-800'
+          }`}
+        >
+          <div className="text-base">{userRole === 'goat' ? '🐐' : '🐅'}</div>
+          <div className="flex flex-col">
+            <span className="text-[11px] font-bold text-stone-200 leading-tight">
+              {profile.name || 'You'} ({userRole === 'goat' ? 'Goat' : 'Tiger'})
             </span>
+            {userRole === 'goat' ? (
+              <span className="text-[9px] text-stone-400 font-medium">
+                Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong> · Eaten: <strong className="font-mono text-red-400">{gameState.goatsCaptured}/5</strong>
+              </span>
+            ) : (
+              <span className="text-[9px] text-stone-400 font-medium">
+                Trapped: <strong className="font-mono text-amber-400">{trappedInfo.trappedCount}/4</strong>
+              </span>
+            )}
           </div>
-          {userRole === 'goat' ? (
-            <div className="flex items-center gap-3 text-[11px]">
-              <span className="text-stone-300">
-                Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong>
-              </span>
-              <span className="text-stone-300">
-                Eaten: <strong className="font-mono text-red-400">{gameState.goatsCaptured}/5</strong>
-              </span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-[11px]">
-              <span className="text-stone-300">Trapped:</span>
-              <strong className="font-mono text-amber-400">{trappedInfo.trappedCount}/4</strong>
-            </div>
-          )}
         </div>
 
-        <div className="grid grid-cols-4 gap-1.5">
-          <button
-            onClick={handleUndo}
-            disabled={historyStack.length === 0 || mode === 'online' || isAiThinking}
-            className={`flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-xs font-bold transition ${
-              historyStack.length === 0 || mode === 'online' || isAiThinking
-                ? 'bg-stone-900/40 text-stone-600 border border-stone-900 cursor-not-allowed'
-                : 'bg-stone-850 hover:bg-stone-800 text-stone-200 border border-stone-700 active:scale-95 shadow'
-            }`}
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Undo</span>
-          </button>
-
-          <button
-            onClick={() => {
-              resetGame();
-              if (mode === 'online') sendRestart();
-            }}
-            className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-stone-850 hover:bg-stone-800 text-stone-200 border border-stone-700 text-xs font-bold transition active:scale-95 shadow"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Reset</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (mode === 'online') {
-                handleLeaveOnlineRoom();
-              }
-              setCurrentScreen('setup');
-            }}
-            className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-xs font-black transition active:scale-95 shadow"
-          >
-            <span>🎮 Mode</span>
-          </button>
-
-          <button
-            onClick={() => setShowLeaderboard(true)}
-            className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-stone-850 hover:bg-stone-800 text-amber-300 border border-amber-600/30 text-xs font-bold transition active:scale-95 shadow"
-          >
-            <Award className="w-3.5 h-3.5 text-amber-400" />
-            <span>Ranks</span>
-          </button>
-        </div>
+        {/* Quick Undo Button (Single action in footer) */}
+        <button
+          onClick={handleUndo}
+          disabled={historyStack.length === 0 || mode === 'online' || isAiThinking}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl border text-xs font-semibold transition ${
+            historyStack.length === 0 || mode === 'online' || isAiThinking
+              ? 'bg-stone-900/40 border-stone-900 text-stone-600 cursor-not-allowed opacity-50'
+              : 'bg-stone-900 border-stone-800 text-stone-200 hover:text-white hover:bg-stone-800 active:scale-95 shadow-sm'
+          }`}
+          title="Undo Last Move"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          <span>Undo</span>
+        </button>
       </footer>
+
+      {/* 4. SIDE FLYOUT MENU DRAWER */}
+      <SideDrawer
+        isOpen={showSideMenu}
+        onClose={() => setShowSideMenu(false)}
+        mode={mode}
+        canUndo={historyStack.length > 0 && mode !== 'online' && !isAiThinking}
+        onUndo={handleUndo}
+        onRestart={resetGame}
+        isMuted={isMuted}
+        onToggleSound={handleToggleSound}
+        boardTheme={boardTheme}
+        onSelectTheme={(t) => setBoardTheme(t)}
+        onOpenRules={() => setShowRules(true)}
+        onOpenLeaderboard={() => setShowLeaderboard(true)}
+        onOpenProfile={() => setShowProfile(true)}
+        onOpenOnlineLobby={() => setShowOnlineLobby(true)}
+        onOpenLedger={() => setShowLedgerMenu(true)}
+        onExitToSetup={() => {
+          if (mode === 'online') {
+            handleLeaveOnlineRoom();
+          }
+          setCurrentScreen('setup');
+        }}
+      />
+
+      {/* 5. VERIFIABLE MOVE LEDGER FLY MENU */}
+      <LedgerFlyMenu
+        isOpen={showLedgerMenu}
+        onClose={() => setShowLedgerMenu(false)}
+        chain={activeChain}
+      />
 
       {/* Modals */}
       <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
@@ -823,11 +786,6 @@ export default function App() {
           setShowLeaderboard(true);
         }}
         onReviewBoard={() => setShowGameOverModal(false)}
-      />
-      <LedgerFlyMenu
-        isOpen={showLedgerMenu}
-        onClose={() => setShowLedgerMenu(false)}
-        chain={activeChain}
       />
       <OfflineIndicator />
     </main>
