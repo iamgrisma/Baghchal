@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Board, BoardTheme, Move, PieceType, PlayerRole } from '../types';
+import { BoardTheme, Move, PieceType, PlayerRole } from '../types';
 import { getTrappedTigersInfo } from '../game/rules';
 
 interface BaghchalBoardProps {
@@ -30,7 +30,7 @@ interface ThemeConfig {
 
 const THEME_STYLES: Record<BoardTheme, ThemeConfig> = {
   classic: {
-    containerBg: 'from-stone-900 via-stone-925 to-stone-950 border-stone-800/80 ring-amber-900/30',
+    containerBg: 'from-stone-900 via-stone-925 to-stone-950 border-stone-800 ring-amber-950/40 shadow-2xl',
     cornerBorder: 'border-amber-600/60',
     boardSurface: '#1c1917',
     boardBorder: '#44403c',
@@ -42,7 +42,7 @@ const THEME_STYLES: Record<BoardTheme, ThemeConfig> = {
     accentGlow: '#f59e0b',
   },
   slate: {
-    containerBg: 'from-slate-900 via-slate-950 to-stone-950 border-cyan-900/40 ring-cyan-950/40',
+    containerBg: 'from-slate-900 via-slate-950 to-stone-950 border-cyan-900/50 ring-cyan-950/50 shadow-2xl',
     cornerBorder: 'border-cyan-500/60',
     boardSurface: '#0f172a',
     boardBorder: '#334155',
@@ -54,7 +54,7 @@ const THEME_STYLES: Record<BoardTheme, ThemeConfig> = {
     accentGlow: '#38bdf8',
   },
   midnight: {
-    containerBg: 'from-zinc-950 via-purple-950/20 to-black border-purple-900/40 ring-purple-950/50',
+    containerBg: 'from-zinc-950 via-purple-950/30 to-black border-purple-900/50 ring-purple-950/60 shadow-2xl',
     cornerBorder: 'border-purple-500/60',
     boardSurface: '#09090b',
     boardBorder: '#27272a',
@@ -82,7 +82,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
   const currentTheme = THEME_STYLES[theme] || THEME_STYLES.classic;
 
   const SIZE = 500;
-  const PADDING = 50;
+  const PADDING = 46;
   const STEP = (SIZE - 2 * PADDING) / 4;
 
   const nodeCoords = useMemo(() => {
@@ -117,22 +117,22 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
   }, [validMoves]);
 
   return (
-    <div className="relative w-full max-w-[min(94vw,calc(100dvh-130px),480px)] aspect-square mx-auto touch-none select-none p-1 flex items-center justify-center">
+    <div className="relative w-full aspect-square max-w-[min(94vw,460px)] mx-auto touch-none select-none flex items-center justify-center">
       <div
-        className={`relative w-full h-full rounded-2xl bg-gradient-to-br ${currentTheme.containerBg} p-2 sm:p-2.5 shadow-2xl border-2 ring-1`}
+        className={`relative w-full h-full rounded-3xl bg-gradient-to-br ${currentTheme.containerBg} p-2 sm:p-2.5 border-2 ring-1 flex items-center justify-center overflow-hidden`}
       >
-        {/* Decorative corner inlays */}
+        {/* Subtle Nepali Corner Inlays */}
         <div
-          className={`absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 ${currentTheme.cornerBorder} rounded-tl-sm pointer-events-none`}
+          className={`absolute top-2.5 left-2.5 w-4 h-4 border-t-2 border-l-2 ${currentTheme.cornerBorder} rounded-tl-sm pointer-events-none`}
         />
         <div
-          className={`absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 ${currentTheme.cornerBorder} rounded-tr-sm pointer-events-none`}
+          className={`absolute top-2.5 right-2.5 w-4 h-4 border-t-2 border-r-2 ${currentTheme.cornerBorder} rounded-tr-sm pointer-events-none`}
         />
         <div
-          className={`absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 ${currentTheme.cornerBorder} rounded-bl-sm pointer-events-none`}
+          className={`absolute bottom-2.5 left-2.5 w-4 h-4 border-b-2 border-l-2 ${currentTheme.cornerBorder} rounded-bl-sm pointer-events-none`}
         />
         <div
-          className={`absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 ${currentTheme.cornerBorder} rounded-br-sm pointer-events-none`}
+          className={`absolute bottom-2.5 right-2.5 w-4 h-4 border-b-2 border-r-2 ${currentTheme.cornerBorder} rounded-br-sm pointer-events-none`}
         />
 
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full overflow-visible">
@@ -166,13 +166,13 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             y={PADDING - 14}
             width={SIZE - 2 * PADDING + 28}
             height={SIZE - 2 * PADDING + 28}
-            rx="12"
+            rx="16"
             fill={currentTheme.boardSurface}
             stroke={currentTheme.boardBorder}
             strokeWidth="1.5"
           />
 
-          {/* Recessed Groove Layer */}
+          {/* Carved Groove Base Layer */}
           <g stroke={currentTheme.grooveStroke} strokeWidth="4.5" strokeLinecap="round">
             <rect x={PADDING} y={PADDING} width={SIZE - 2 * PADDING} height={SIZE - 2 * PADDING} fill="none" />
             {[1, 2, 3].map((r) => (
@@ -189,7 +189,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             <line x1={SIZE - PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={PADDING} />
           </g>
 
-          {/* Active Primary Inlay Lines */}
+          {/* Active Grid Lines */}
           <g stroke={currentTheme.lineSecondary} strokeWidth="2.5" strokeLinecap="round">
             <rect
               x={PADDING}
@@ -228,7 +228,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             <line x1={SIZE - PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={PADDING} stroke={currentTheme.lineSecondary} />
           </g>
 
-          {/* Last Move Trail Indicator */}
+          {/* Move Trail */}
           {lastMove && lastMove.from !== undefined && (
             <line
               x1={nodeCoords[lastMove.from].x}
@@ -262,7 +262,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             </g>
           )}
 
-          {/* Board Intersection Nodes & Touch Targets */}
+          {/* Intersection Points & Nodes */}
           {nodeCoords.map((pos, idx) => {
             const piece = board[idx];
             const isSelected = selectedPos === idx;
@@ -284,13 +284,13 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                 <circle
                   cx={pos.x}
                   cy={pos.y}
-                  r="5"
+                  r="5.5"
                   fill={currentTheme.studFill}
                   stroke={currentTheme.studStroke}
                   strokeWidth="1.5"
                 />
 
-                {/* Last Move Destination Halo */}
+                {/* Last Move Halo Ring */}
                 {isLastMoveDestination && !isSelected && (
                   <circle
                     cx={pos.x}
@@ -312,7 +312,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                         <circle
                           cx={pos.x}
                           cy={pos.y}
-                          r="11"
+                          r="12"
                           fill="rgba(245, 158, 11, 0.16)"
                           stroke={currentTheme.linePrimary}
                           strokeWidth="1.5"
@@ -337,7 +337,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                   </g>
                 )}
 
-                {/* Piece Rendering */}
+                {/* Pieces */}
                 {piece && (
                   <g
                     filter={
@@ -366,7 +366,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                       className="transition-transform duration-150"
                     />
 
-                    {/* Tiger Face Graphics */}
+                    {/* Tiger Face Detail */}
                     {piece === 'tiger' && (
                       <g transform={`translate(${pos.x - 13}, ${pos.y - 13}) scale(1.1)`}>
                         <path d="M4 6 C2 1 6 0 8 4 Z" fill="#451a03" />
@@ -379,7 +379,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                       </g>
                     )}
 
-                    {/* Goat Face Graphics */}
+                    {/* Goat Face Detail */}
                     {piece === 'goat' && (
                       <g transform={`translate(${pos.x - 12}, ${pos.y - 12})`}>
                         <path d="M6 9 C4 3 8 1 10 6" stroke="#1e293b" strokeWidth="2" fill="none" strokeLinecap="round" />
@@ -390,7 +390,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                       </g>
                     )}
 
-                    {/* Trapped Tiger Badge */}
+                    {/* Trapped Tiger Warning Badge */}
                     {isTrappedTiger && (
                       <g transform={`translate(${pos.x + 8}, ${pos.y - 15})`}>
                         <circle cx="5" cy="5" r="7" fill="#ef4444" stroke="#ffffff" strokeWidth="1.2" />
@@ -402,7 +402,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                   </g>
                 )}
 
-                {/* Touch Hitbox */}
+                {/* Responsive Touch Hitbox */}
                 <circle cx={pos.x} cy={pos.y} r="25" fill="transparent" className="cursor-pointer active:opacity-20" />
               </g>
             );
