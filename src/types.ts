@@ -1,7 +1,3 @@
-/**
- * Baghchal Game Types and Interfaces
- */
-
 export type PieceType = 'tiger' | 'goat' | null;
 
 export type Board = PieceType[];
@@ -14,34 +10,34 @@ export type AIDifficulty = 'easy' | 'medium' | 'hard' | 'adaptive';
 
 export type GamePhase = 'placement' | 'movement';
 
-export type GameStatus = 'playing' | 'tiger_won' | 'goat_won';
+export type GameStatus = 'playing' | 'tiger_won' | 'goat_won' | 'draw';
 
 export interface Move {
   type: 'place' | 'step' | 'jump';
-  from?: number; // 0..24
-  to: number;   // 0..24
-  captured?: number; // index of captured goat, if jump
+  from?: number;
+  to: number;
+  captured?: number;
   piece: 'tiger' | 'goat';
 }
 
 export interface GameState {
-  board: (PieceType)[];
+  board: PieceType[];
   turn: PlayerRole;
-  goatsInReserve: number; // starts at 20, drops to 0
-  goatsCaptured: number;  // 0 to 5
+  goatsInReserve: number;
+  goatsCaptured: number;
   phase: GamePhase;
   status: GameStatus;
   moveHistory: Move[];
   lastMove: Move | null;
 }
 
-export interface MatchHistoryItem {
+export interface MatchRecord {
   id: string;
   date: string;
   mode: GameMode;
   userRole: PlayerRole;
   opponent: string;
-  result: 'won' | 'lost';
+  result: 'won' | 'lost' | 'draw';
   goatsCaptured: number;
   totalTurns: number;
   durationSeconds: number;
@@ -55,7 +51,7 @@ export interface PlayerProfile {
   losses: number;
   currentStreak: number;
   bestStreak: number;
-  history: MatchHistoryItem[];
+  history: MatchRecord[];
 }
 
 export interface OnlineRoomInfo {
@@ -65,4 +61,15 @@ export interface OnlineRoomInfo {
   isInitiator: boolean;
   connected: boolean;
   usingP2P: boolean;
+}
+
+export interface LeaderboardPlayer {
+  id: string;
+  name: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  tigersTrapped: number;
+  goatsCaptured: number;
+  updatedAt: number;
 }

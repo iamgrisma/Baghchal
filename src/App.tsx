@@ -21,11 +21,11 @@ import { sound } from './utils/audio';
 import { loadPlayerProfile, recordMatchResult, savePlayerProfile } from './utils/storage';
 import { useWebRTCGame } from './hooks/useWebRTCGame';
 import { BaghchalBoard } from './components/BaghchalBoard';
-import { MinimalGameHUD } from './components/MinimalGameHUD';
 import { SplashScreen } from './components/SplashScreen';
 import { GameSetupScreen } from './components/GameSetupScreen';
 import { RulesModal } from './components/RulesModal';
 import { ProfileModal } from './components/ProfileModal';
+import { LeaderboardModal } from './components/LeaderboardModal';
 import { OnlineLobbyModal } from './components/OnlineLobbyModal';
 import { GameOverModal } from './components/GameOverModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -38,12 +38,11 @@ import {
   HelpCircle,
   Trophy,
   Globe,
-  LogOut,
+  Award,
 } from 'lucide-react';
 import {
   initTelegramWebApp,
   isTelegramWebApp,
-  getTelegramUser,
   getTelegramStartParam,
   triggerTelegramHaptic,
 } from './utils/telegram';
@@ -51,7 +50,6 @@ import {
 type AppScreen = 'splash' | 'setup' | 'play';
 
 export default function App() {
-  // Navigation Screens: starts on 'splash' for authentic game branding & mode select
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('splash');
 
   // Game State
@@ -72,6 +70,7 @@ export default function App() {
   // Modals
   const [showRules, setShowRules] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showOnlineLobby, setShowOnlineLobby] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [isTelegram, setIsTelegram] = useState(false);
@@ -96,7 +95,6 @@ export default function App() {
   } = useWebRTCGame({
     playerName: profile.name,
     onRemoteMove: (remoteMove, nextState) => {
-      // Play sound and haptics according to remote move
       if (remoteMove.type === 'jump') {
         sound.playAttack();
         triggerTelegramHaptic('heavy');
@@ -119,22 +117,11 @@ export default function App() {
     },
   });
 
-  // Telegram Mini App Initialization & deep link detection
+  // Telegram WebApp Initialization
   useEffect(() => {
     initTelegramWebApp();
-    const inTg = isTelegramWebApp();
-    setIsTelegram(inTg);
+    setIsTelegram(isTelegramWebApp());
 
-    if (inTg) {
-      const tgUser = getTelegramUser();
-      if (tgUser && (profile.name === 'Baghchal Champion' || !profile.name)) {
-        const updated = { ...profile, name: tgUser.name };
-        setProfile(updated);
-        savePlayerProfile(updated);
-      }
-    }
-
-    // Auto-join custom room if opened via Telegram deep-link
     const deepRoom = getTelegramStartParam();
     if (deepRoom) {
       setMode('online');
@@ -144,7 +131,6 @@ export default function App() {
     }
   }, []);
 
-  // Online connection transition: automatically close lobby modal and play start chime when opponent joins
   const prevConnectedRef = useRef(false);
   useEffect(() => {
     if (roomInfo?.connected && !prevConnectedRef.current) {
@@ -154,9 +140,7 @@ export default function App() {
         } else {
           sound.playMove();
         }
-      } catch (e) {
-        console.warn('Connect sound error:', e);
-      }
+      } catch (e) {}
       try {
         triggerTelegramHaptic('success');
       } catch (e) {}
@@ -165,7 +149,6 @@ export default function App() {
     prevConnectedRef.current = !!roomInfo?.connected;
   }, [roomInfo?.connected]);
 
-  // Online matchmaking / room handlers
   const handleStartAutoMatch = (role: 'any' | 'tiger' | 'goat') => {
     setMode('online');
     resetGame();
@@ -190,7 +173,6 @@ export default function App() {
     setShowOnlineLobby(false);
   };
 
-  // Determine roles for display and interaction
   const userRole: PlayerRole =
     mode === 'online' && roomInfo?.myRole
       ? roomInfo.myRole
@@ -199,10 +181,8 @@ export default function App() {
       : 'goat';
   const opponentRole: PlayerRole = userRole === 'goat' ? 'tiger' : 'goat';
 
-  // Calculate current trapped tigers
   const trappedInfo = getTrappedTigersInfo(gameState.board);
 
-  // Determine if human user is allowed to make a move right now
   const isUserTurn = useCallback(() => {
     if (gameState.status !== 'playing') return false;
     if (mode === 'local') return true;
@@ -217,16 +197,13 @@ export default function App() {
     return false;
   }, [gameState.status, gameState.turn, mode, isAiThinking, aiUserRole, roomInfo]);
 
-  // Compute valid moves for currently selected node or placement
   const currentValidMoves = useCallback((): Move[] => {
     if (!isUserTurn()) return [];
 
-    // Placement phase for Goats
     if (gameState.turn === 'goat' && gameState.phase === 'placement') {
       return getAllGoatMoves(gameState.board, gameState.goatsInReserve);
     }
 
-    // Otherwise, must have a piece selected to move
     if (selectedPos === null) return [];
 
     const piece = gameState.board[selectedPos];
@@ -246,7 +223,6 @@ export default function App() {
 
   const validMoves = currentValidMoves();
 
-  // Reset Game
   const resetGame = useCallback(() => {
     const fresh = createInitialGameState();
     setGameState(fresh);
@@ -257,7 +233,7 @@ export default function App() {
     matchStartTime.current = Date.now();
   }, []);
 
-  // Handle game over logic (sound, stats, modal)
+  // Handle Game Over Flow & Global Leaderboard update
   useEffect(() => {
     if (gameState.status !== 'playing') {
       setShowGameOverModal(true);
@@ -277,7 +253,6 @@ export default function App() {
       } else if (mode === 'online' && roomInfo) {
         userWon = isTigerWon ? roomInfo.myRole === 'tiger' : roomInfo.myRole === 'goat';
       } else {
-        // Local 2-player
         userWon = true;
       }
 
@@ -287,15 +262,11 @@ export default function App() {
         triggerTelegramHaptic('error');
       }
 
-      // Record profile statistics
       const durationSeconds = Math.max(1, Math.round((Date.now() - matchStartTime.current) / 1000));
       const rolePlayed = mode === 'online' && roomInfo ? roomInfo.myRole : aiUserRole;
-      const adaptiveDetails = getAdaptiveAIDetails(profile);
       const opponentName =
         mode === 'ai'
-          ? difficulty === 'adaptive'
-            ? `AI (Adaptive: ${adaptiveDetails.effectiveDifficulty})`
-            : `AI (${difficulty})`
+          ? `AI (${difficulty})`
           : mode === 'online' && roomInfo
           ? roomInfo.opponentName
           : 'Local Friend';
@@ -310,6 +281,25 @@ export default function App() {
         durationSeconds,
       });
       setProfile(updated);
+
+      // Submit score to Cloudflare Leaderboard
+      const winnerName = userWon ? profile.name : opponentName;
+      const winnerId = userWon ? `p_${profile.name.toLowerCase().replace(/[^a-z0-9]/g, '')}` : `p_opp_${Date.now()}`;
+      const loserName = userWon ? opponentName : profile.name;
+      const loserId = userWon ? `p_opp_${Date.now()}` : `p_${profile.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
+      fetch('/api/leaderboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          winnerId,
+          winnerName,
+          loserId,
+          loserName,
+          winnerRole: isTigerWon ? 'tiger' : 'goat',
+          goatsEaten: gameState.goatsCaptured,
+        }),
+      }).catch((e) => console.warn('Leaderboard report error:', e));
     }
   }, [gameState.status]);
 
@@ -359,49 +349,43 @@ export default function App() {
     };
   }, [mode, gameState.turn, gameState.status, aiUserRole, difficulty, profile]);
 
-  // Execute a verified Move
   const executeMove = (move: Move) => {
     const currentState = gameStateRef.current;
 
-    // Sound effect and Telegram Haptic Feedback
     if (move.type === 'jump') {
-      sound.playAttack(); // Royal Bengal Tiger Roar on capture!
+      sound.playAttack();
       triggerTelegramHaptic('heavy');
     } else if (move.type === 'place') {
-      sound.playPlace('goat'); // Goat "myaa" sound on placement!
+      sound.playPlace('goat');
       triggerTelegramHaptic('light');
     } else {
-      sound.playMove(move.piece); // Goat "myaa" or tiger stealth slide tap!
+      sound.playMove(move.piece);
       triggerTelegramHaptic('medium');
     }
 
     setHistoryStack((prev) => [...prev, currentState]);
     const nextState = applyMove(currentState, move);
 
-    // Check if tiger became trapped for sound & haptic
     const beforeTrapped = getTrappedTigersInfo(currentState.board).trappedCount;
     const afterTrapped = getTrappedTigersInfo(nextState.board).trappedCount;
     if (afterTrapped > beforeTrapped) {
       sound.playTrap();
-      triggerTelegramHaptic('warning');
+      triggerTelegramHaptic('success');
     }
 
     setGameState(nextState);
     setSelectedPos(null);
 
-    // If online, broadcast to remote peer via WebRTC / Cloudflare Edge
     if (mode === 'online') {
       sendMove(move, nextState);
     }
   };
 
-  // Node Click Interaction
   const handleNodeClick = (pos: number) => {
     if (!isUserTurn()) return;
 
     const pieceAtNode = gameState.board[pos];
 
-    // 1. Placement phase for Goats: tap any empty node to place
     if (
       gameState.turn === 'goat' &&
       gameState.phase === 'placement' &&
@@ -415,30 +399,25 @@ export default function App() {
       return;
     }
 
-    // 2. Target destination clicked: execute move
     const matchedMove = validMoves.find((m) => m.to === pos);
     if (matchedMove) {
       executeMove(matchedMove);
       return;
     }
 
-    // 3. Selection of piece to move
     if (pieceAtNode === gameState.turn) {
       setSelectedPos(selectedPos === pos ? null : pos);
       triggerTelegramHaptic('selection');
       return;
     }
 
-    // 4. Clicked outside valid options
     setSelectedPos(null);
   };
 
-  // Undo Move (Local or AI mode)
   const handleUndo = () => {
     if (historyStack.length === 0 || mode === 'online' || isAiThinking) return;
 
     if (mode === 'ai') {
-      // Undo both the AI's move and the user's move (2 steps)
       if (historyStack.length >= 2) {
         const targetState = historyStack[historyStack.length - 2];
         setHistoryStack((prev) => prev.slice(0, prev.length - 2));
@@ -449,7 +428,6 @@ export default function App() {
         setGameState(targetState);
       }
     } else {
-      // Local 2-player: undo 1 step
       const targetState = historyStack[historyStack.length - 1];
       setHistoryStack((prev) => prev.slice(0, prev.length - 1));
       setGameState(targetState);
@@ -466,7 +444,6 @@ export default function App() {
     setIsMuted(next);
   };
 
-  // Render Screen 1: Splash Screen
   if (currentScreen === 'splash') {
     return (
       <>
@@ -501,12 +478,16 @@ export default function App() {
             setProfile(fresh);
           }}
         />
+        <LeaderboardModal
+          isOpen={showLeaderboard}
+          onClose={() => setShowLeaderboard(false)}
+          currentPlayerName={profile.name}
+        />
         <OfflineIndicator />
       </>
     );
   }
 
-  // Render Screen 2: Game Setup Screen
   if (currentScreen === 'setup') {
     return (
       <>
@@ -538,56 +519,23 @@ export default function App() {
           onOpenRules={() => setShowRules(true)}
         />
         <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
-        <ProfileModal
-          isOpen={showProfile}
-          profile={profile}
-          onClose={() => setShowProfile(false)}
-          onUpdateName={(name) => {
-            const updated = { ...profile, name };
-            savePlayerProfile(updated);
-            setProfile(updated);
-          }}
-          onResetStats={() => {
-            const fresh = {
-              ...profile,
-              gamesPlayed: 0,
-              winsGoat: 0,
-              winsTiger: 0,
-              losses: 0,
-              currentStreak: 0,
-              bestStreak: 0,
-              history: [],
-            };
-            savePlayerProfile(fresh);
-            setProfile(fresh);
-          }}
-        />
-        <OnlineLobbyModal
-          isOpen={showOnlineLobby}
-          playerName={profile.name}
-          isSearching={isSearching}
-          matchStatusText={matchStatusText}
-          roomInfo={roomInfo}
-          onClose={() => setShowOnlineLobby(false)}
-          onStartAutoMatch={handleStartAutoMatch}
-          onCancelAutoMatch={handleCancelAutoMatch}
-          onJoinCustomRoom={handleJoinCustomRoom}
-          onLeaveRoom={handleLeaveOnlineRoom}
+        <LeaderboardModal
+          isOpen={showLeaderboard}
+          onClose={() => setShowLeaderboard(false)}
+          currentPlayerName={profile.name}
         />
         <OfflineIndicator />
       </>
     );
   }
 
-  // Render Screen: Immersive Single-Viewport Mobile Game UI
   return (
     <main
       className="fixed inset-0 w-full h-full h-[100dvh] max-h-[100dvh] bg-stone-950 text-stone-100 flex flex-col justify-between overflow-hidden select-none touch-none px-2 py-1 xs:py-1.5"
       style={{ height: '100dvh', maxHeight: '100dvh' }}
     >
-      {/* 1. TOP GAME HUD: Opponent Status & Quick Controls */}
+      {/* 1. TOP GAME HUD */}
       <header className="w-full max-w-lg mx-auto flex items-center justify-between gap-1.5 px-1 py-1 shrink-0">
-        {/* Left: Back / Menu Button & Opponent Player Badge */}
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => {
@@ -597,7 +545,7 @@ export default function App() {
               setCurrentScreen('setup');
             }}
             className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-400 border border-stone-800 text-xs transition active:scale-95 shadow-sm"
-            title="Back to Game Setup / Menu"
+            title="Back to Game Setup"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -613,41 +561,29 @@ export default function App() {
               )}
             </div>
             <div className="flex flex-col">
-            <span className="text-[11px] font-bold text-stone-200 leading-tight">
-              {mode === 'ai'
-                ? `AI (${difficulty === 'adaptive' ? getAdaptiveAIDetails(profile).tierLabel : difficulty})`
-                : mode === 'online' && roomInfo
-                ? roomInfo.opponentName
-                : opponentRole === 'tiger'
-                ? 'Tiger Player'
-                : 'Goat Player'}
-            </span>
-            {opponentRole === 'tiger' ? (
-              <div className="flex items-center gap-1 text-[9px] text-amber-400 font-medium">
-                <span>Trapped:</span>
-                <strong className="font-mono text-stone-100">{trappedInfo.trappedCount}/4</strong>
-                <div className="flex items-center gap-0.5 ml-0.5">
-                  {[0, 1, 2, 3].map((slot) => (
-                    <span
-                      key={`opp-trap-pip-${slot}`}
-                      className={`w-1.5 h-1.5 rounded-full transition-all ${
-                        slot < trappedInfo.trappedCount
-                          ? 'bg-emerald-400 shadow-sm shadow-emerald-400/80 ring-1 ring-emerald-300'
-                          : 'bg-stone-800 border border-stone-700'
-                      }`}
-                    />
-                  ))}
+              <span className="text-[11px] font-bold text-stone-200 leading-tight">
+                {mode === 'ai'
+                  ? `AI (${difficulty === 'adaptive' ? getAdaptiveAIDetails(profile).tierLabel : difficulty})`
+                  : mode === 'online' && roomInfo
+                  ? roomInfo.opponentName
+                  : opponentRole === 'tiger'
+                  ? 'Tiger Player'
+                  : 'Goat Player'}
+              </span>
+              {opponentRole === 'tiger' ? (
+                <div className="flex items-center gap-1 text-[9px] text-amber-400 font-medium">
+                  <span>Trapped:</span>
+                  <strong className="font-mono text-stone-100">{trappedInfo.trappedCount}/4</strong>
                 </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-[9px] text-stone-400 font-medium">
-                <span>Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong></span>
-                <span>Eaten: <strong className="font-mono text-red-400">{gameState.goatsCaptured}/5</strong></span>
-              </div>
-            )}
+              ) : (
+                <div className="flex items-center gap-2 text-[9px] text-stone-400 font-medium">
+                  <span>Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong></span>
+                  <span>Eaten: <strong className="font-mono text-red-400">{gameState.goatsCaptured}/5</strong></span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
         {/* Center: Turn Status Pill */}
         <div className="flex items-center">
@@ -655,14 +591,6 @@ export default function App() {
             <span className="px-3 py-1 rounded-full text-[11px] font-black bg-amber-500 text-stone-950 shadow">
               {gameState.status === 'goat_won' ? 'Goats Won! 🏆' : 'Tigers Won! 🏆'}
             </span>
-          ) : mode === 'online' && roomInfo && !roomInfo.connected ? (
-            <button
-              onClick={() => setShowOnlineLobby(true)}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-              <span>Waiting for Opponent</span>
-            </button>
           ) : isAiThinking ? (
             <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
@@ -674,104 +602,47 @@ export default function App() {
             </span>
           ) : (
             <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-stone-900 text-stone-300 border border-stone-800 shadow-sm">
-              <span>{opponentRole === 'goat' ? '🐐' : '🐅'} {mode === 'online' && roomInfo ? roomInfo.opponentName : 'Opponent'}'s Turn</span>
+              <span>{opponentRole === 'goat' ? '🐐' : '🐅'} Opponent Turn</span>
             </span>
           )}
         </div>
 
-        {/* Right: Quick Action Icons & Online Room Badge */}
+        {/* Right: Quick Action Icons */}
         <div className="flex items-center gap-1">
-          {mode === 'online' && roomInfo && (
-            <button
-              onClick={() => setShowOnlineLobby(true)}
-              className="px-2 py-1 rounded-lg bg-stone-900 hover:bg-stone-800 text-[10px] font-mono font-bold text-amber-300 border border-stone-800 flex items-center gap-1 transition"
-              title="View room code / invite link"
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  roomInfo.connected
-                    ? roomInfo.usingP2P
-                      ? 'bg-emerald-400 animate-pulse'
-                      : 'bg-sky-400'
-                    : 'bg-amber-400 animate-ping'
-                }`}
-              />
-              <span>{roomInfo.roomId.replace('bc_', '').toUpperCase()}</span>
-            </button>
-          )}
+          <button
+            onClick={() => setShowLeaderboard(true)}
+            className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-400 border border-stone-800 text-xs transition active:scale-95 shadow-sm"
+            title="Global Leaderboard"
+          >
+            <Trophy className="w-4 h-4" />
+          </button>
           <button
             onClick={handleToggleSound}
-            className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 text-xs transition active:scale-95"
+            className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 text-xs transition active:scale-95 shadow-sm"
             title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
           >
             {isMuted ? <VolumeX className="w-4 h-4 text-stone-500" /> : <Volume2 className="w-4 h-4 text-amber-400" />}
           </button>
-          <button
-            onClick={() => setShowRules(true)}
-            className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 text-xs transition active:scale-95"
-            title="How to play"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setShowProfile(true)}
-            className="p-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 text-xs transition active:scale-95"
-            title="Profile & Stats"
-          >
-            <Trophy className="w-4 h-4 text-amber-400" />
-          </button>
         </div>
       </header>
 
-      {/* 2. CENTER SQUARE BOARD ARENA */}
-      <section className="flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden p-0.5 sm:p-1">
-        <div className="w-[min(94vw,calc(100dvh-175px))] h-[min(94vw,calc(100dvh-175px))] max-w-[460px] max-h-[460px] aspect-square flex items-center justify-center">
-          <BaghchalBoard
-            board={gameState.board}
-            turn={gameState.turn}
-            phase={gameState.phase}
-            goatsInReserve={gameState.goatsInReserve}
-            selectedPos={selectedPos}
-            validMoves={validMoves}
-            lastMove={gameState.lastMove}
-            isInteractive={isUserTurn()}
-            onNodeClick={handleNodeClick}
-          />
-        </div>
+      {/* 2. Board Arena */}
+      <section className="flex-1 flex items-center justify-center w-full max-w-lg mx-auto overflow-hidden p-0.5 sm:p-1">
+        <BaghchalBoard
+          board={gameState.board}
+          turn={gameState.turn}
+          phase={gameState.phase}
+          goatsInReserve={gameState.goatsInReserve}
+          selectedPos={selectedPos}
+          validMoves={validMoves}
+          lastMove={gameState.lastMove}
+          isInteractive={isUserTurn()}
+          onNodeClick={handleNodeClick}
+        />
       </section>
 
-      {/* 3. TACTICAL STATUS RIBBON */}
-      <div className="w-full max-w-lg mx-auto text-center shrink-0 py-0.5">
-        <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-stone-900/90 border border-stone-800/80 text-[11px] font-medium text-amber-300 shadow-sm">
-          {gameState.status !== 'playing' ? (
-            <span>Match finished! Tap "Play Again" or "Reset".</span>
-          ) : mode === 'online' && roomInfo && !roomInfo.connected ? (
-            <span>
-              Room Code: <strong className="text-amber-200">{roomInfo.roomId.replace('bc_', '').toUpperCase()}</strong> • Share code with a friend to play!
-            </span>
-          ) : mode === 'online' && !isUserTurn() ? (
-            <span>Waiting for {roomInfo?.opponentName || 'opponent'} to move...</span>
-          ) : isAiThinking ? (
-            <span>Tiger is calculating optimal tactical move...</span>
-          ) : userRole === 'goat' ? (
-            gameState.phase === 'placement' ? (
-              <span>Tap empty spot to place Goat ({gameState.goatsInReserve} in reserve)</span>
-            ) : selectedPos === null ? (
-              <span>Select a Goat to move</span>
-            ) : (
-              <span>Tap adjacent empty spot to move</span>
-            )
-          ) : selectedPos === null ? (
-            <span>Select a Tiger to move or jump capture</span>
-          ) : (
-            <span>Tap adjacent spot or jump over a goat</span>
-          )}
-        </div>
-      </div>
-
-      {/* 4. BOTTOM PLAYER STATS & ACTION CONTROLS */}
+      {/* 3. Bottom Player Stats & Controls */}
       <footer className="w-full max-w-lg mx-auto flex flex-col gap-1.5 shrink-0 px-1 pb-1">
-        {/* User Player Row */}
         <div className="flex items-center justify-between bg-stone-900/90 border border-stone-800/80 rounded-xl px-2.5 py-1 text-xs shadow-sm">
           <div className="flex items-center gap-1.5">
             <span className="text-base">{userRole === 'goat' ? '🐐' : '🐅'}</span>
@@ -784,85 +655,43 @@ export default function App() {
               <span className="text-stone-300">
                 Reserve: <strong className="font-mono text-amber-300">{gameState.goatsInReserve}</strong>
               </span>
-              <div className="flex items-center gap-1">
-                <span className="text-stone-300">Eaten:</span>
-                <strong className="font-mono text-red-400 mr-1">{gameState.goatsCaptured}/5</strong>
-                <div className="flex items-center gap-0.5">
-                  {[0, 1, 2, 3, 4].map((slot) => (
-                    <span
-                      key={`user-eaten-pip-${slot}`}
-                      className={`w-1.5 h-1.5 rounded-full transition-all ${
-                        slot < gameState.goatsCaptured
-                          ? 'bg-red-500 shadow-sm shadow-red-500/80 ring-1 ring-red-400'
-                          : 'bg-stone-800 border border-stone-700'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
+              <span className="text-stone-300">
+                Eaten: <strong className="font-mono text-red-400">{gameState.goatsCaptured}/5</strong>
+              </span>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-[11px]">
               <span className="text-stone-300">Trapped:</span>
               <strong className="font-mono text-amber-400">{trappedInfo.trappedCount}/4</strong>
-              <div className="flex items-center gap-0.5 ml-0.5">
-                {[0, 1, 2, 3].map((slot) => (
-                  <span
-                    key={`user-trap-pip-${slot}`}
-                    className={`w-1.5 h-1.5 rounded-full transition-all ${
-                      slot < trappedInfo.trappedCount
-                        ? 'bg-emerald-400 shadow-sm shadow-emerald-400/80 ring-1 ring-emerald-300'
-                        : 'bg-stone-800 border border-stone-700'
-                    }`}
-                  />
-                ))}
-              </div>
             </div>
           )}
         </div>
 
-        {/* Action Button Deck: Large thumb-friendly arcade buttons */}
         <div className="grid grid-cols-4 gap-1.5">
-          {/* Button 1: Undo or Leave (in online mode) */}
-          {mode === 'online' ? (
-            <button
-              onClick={handleLeaveOnlineRoom}
-              className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-red-950/40 hover:bg-red-900/50 text-red-300 border border-red-800/60 text-xs font-bold transition active:scale-95 shadow"
-              title="Leave online room"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Leave</span>
-            </button>
-          ) : (
-            <button
-              onClick={handleUndo}
-              disabled={historyStack.length === 0 || isAiThinking}
-              className={`flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-xs font-bold transition ${
-                historyStack.length === 0 || isAiThinking
-                  ? 'bg-stone-900/40 text-stone-600 border border-stone-900 cursor-not-allowed'
-                  : 'bg-stone-850 hover:bg-stone-800 text-stone-200 border border-stone-700 active:scale-95 shadow'
-              }`}
-              title="Undo last move"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Undo</span>
-            </button>
-          )}
+          <button
+            onClick={handleUndo}
+            disabled={historyStack.length === 0 || mode === 'online' || isAiThinking}
+            className={`flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-xs font-bold transition ${
+              historyStack.length === 0 || mode === 'online' || isAiThinking
+                ? 'bg-stone-900/40 text-stone-600 border border-stone-900 cursor-not-allowed'
+                : 'bg-stone-850 hover:bg-stone-800 text-stone-200 border border-stone-700 active:scale-95 shadow'
+            }`}
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Undo</span>
+          </button>
 
-          {/* Button 2: Restart / Reset */}
           <button
             onClick={() => {
               resetGame();
               if (mode === 'online') sendRestart();
             }}
             className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-stone-850 hover:bg-stone-800 text-stone-200 border border-stone-700 text-xs font-bold transition active:scale-95 shadow"
-            title="Restart match"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Reset</span>
           </button>
 
-          {/* Button 3: Mode / Setup */}
           <button
             onClick={() => {
               if (mode === 'online') {
@@ -871,31 +700,27 @@ export default function App() {
               setCurrentScreen('setup');
             }}
             className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-xs font-black transition active:scale-95 shadow"
-            title="Change Game Mode or Difficulty"
           >
             <span>🎮 Mode</span>
           </button>
 
-          {/* Button 4: Online Lobby */}
           <button
-            onClick={() => setShowOnlineLobby(true)}
-            className={`flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-xs font-bold transition active:scale-95 shadow ${
-              mode === 'online'
-                ? roomInfo?.connected
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                  : 'bg-amber-600 hover:bg-amber-500 text-stone-950'
-                : 'bg-sky-600 hover:bg-sky-500 text-white'
-            }`}
-            title="Online Multiplayer with Friends"
+            onClick={() => setShowLeaderboard(true)}
+            className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-stone-850 hover:bg-stone-800 text-amber-300 border border-amber-600/30 text-xs font-bold transition active:scale-95 shadow"
           >
-            <Globe className="w-3.5 h-3.5" />
-            <span>{mode === 'online' ? (roomInfo?.connected ? 'Room' : 'Invite') : 'Online'}</span>
+            <Award className="w-3.5 h-3.5 text-amber-400" />
+            <span>Ranks</span>
           </button>
         </div>
       </footer>
 
+      {/* Modals */}
       <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
-
+      <LeaderboardModal
+        isOpen={showLeaderboard}
+        onClose={() => setShowLeaderboard(false)}
+        currentPlayerName={profile.name}
+      />
       <ProfileModal
         isOpen={showProfile}
         profile={profile}
@@ -920,7 +745,6 @@ export default function App() {
           setProfile(fresh);
         }}
       />
-
       <OnlineLobbyModal
         isOpen={showOnlineLobby}
         playerName={profile.name}
@@ -933,7 +757,6 @@ export default function App() {
         onJoinCustomRoom={handleJoinCustomRoom}
         onLeaveRoom={handleLeaveOnlineRoom}
       />
-
       <GameOverModal
         isOpen={showGameOverModal}
         status={gameState.status}
@@ -949,10 +772,12 @@ export default function App() {
           setShowGameOverModal(false);
           setCurrentScreen('setup');
         }}
+        onOpenLeaderboard={() => {
+          setShowGameOverModal(false);
+          setShowLeaderboard(true);
+        }}
         onReviewBoard={() => setShowGameOverModal(false)}
       />
-
-      {/* Offline Connectivity Notification */}
       <OfflineIndicator />
     </main>
   );
