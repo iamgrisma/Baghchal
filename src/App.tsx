@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GameMode, GameState, Move, PlayerRole, AIDifficulty, PlayerProfile } from './types';
-import { createInitialGameState, applyMove, getTrappedTigersInfo, getAllGoatMoves } from './game/rules';
+import {
+  createInitialGameState,
+  applyMove,
+  getTrappedTigersInfo,
+  getAllGoatMoves,
+  getAllTigerMoves,
+  getTigerMovesForPos,
+} from './game/rules';
 import { getAIMove, getAdaptiveAIDetails } from './game/ai';
 import { BaghchalLedger, LedgerBlock } from './game/ledger';
 import { sound } from './utils/audio';
@@ -221,23 +228,33 @@ export default function App() {
     return false;
   }, [gameState.status, gameState.turn, mode, isAiThinking, aiUserRole, roomInfo]);
 
+  // Compute strictly valid moves for currently selected node or placement
   const currentValidMoves = useCallback((): Move[] => {
     if (!isUserTurn()) return [];
 
+    // Goat placement phase: can place at any empty node
     if (gameState.turn === 'goat' && gameState.phase === 'placement') {
       return getAllGoatMoves(gameState.board, gameState.goatsInReserve);
     }
 
+    // Movement phase: must have selected a node
     if (selectedPos === null) return [];
 
     const piece = gameState.board[selectedPos];
     if (piece !== gameState.turn) return [];
 
+    // Tiger turn: calculate valid moves and jumps for selected tiger
     if (piece === 'tiger') {
-      return getAllGoatMoves(gameState.board, 0);
+      return getTigerMovesForPos(gameState.board, selectedPos);
     }
 
-    return getAllGoatMoves(gameState.board, 0).filter((m) => m.from === selectedPos);
+    // Goat movement phase: calculate adjacent sliding moves
+    if (piece === 'goat' && gameState.phase === 'movement') {
+      const allGoatMoves = getAllGoatMoves(gameState.board, 0);
+      return allGoatMoves.filter((m) => m.from === selectedPos);
+    }
+
+    return [];
   }, [gameState, selectedPos, isUserTurn]);
 
   const validMoves = currentValidMoves();
@@ -339,7 +356,8 @@ export default function App() {
 
     const executeAiMove = async () => {
       try {
-        const aiMove = await getAIMove(gameState, difficulty, profile);
+        const aiRole: PlayerRole = aiUserRole === 'goat' ? 'tiger' : 'goat';
+        const aiMove = await getAIMove(gameState, aiRole, difficulty, profile);
         if (isCancelled) return;
 
         if (aiMove) {
@@ -404,6 +422,7 @@ export default function App() {
 
     const pieceAtNode = gameState.board[pos];
 
+    // 1. Placement phase for Goats: tap empty node
     if (
       gameState.turn === 'goat' &&
       gameState.phase === 'placement' &&
@@ -417,12 +436,14 @@ export default function App() {
       return;
     }
 
+    // 2. Clicked a valid destination for selected piece
     const matchedMove = validMoves.find((m) => m.to === pos);
     if (matchedMove) {
       executeMove(matchedMove);
       return;
     }
 
+    // 3. Selection of piece to move
     if (pieceAtNode === gameState.turn) {
       setSelectedPos(selectedPos === pos ? null : pos);
       triggerTelegramHaptic('selection');
