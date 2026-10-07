@@ -59,7 +59,6 @@ export function useWebRTCGame({
   const roleRef = useRef<PlayerRole | null>(null);
   const isInitiatorRef = useRef(false);
   const localOfferRef = useRef<any>(null);
-  const lastSeenMoveCountRef = useRef(0);
 
   const getCleanTopic = (roomId: string) => {
     const clean = roomId.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -91,7 +90,6 @@ export function useWebRTCGame({
     }
   };
 
-  // 30-Second Forfeit Countdown Management
   const startForfeitCountdown = useCallback(() => {
     if (forfeitCountdownRef.current) return;
     setIsOpponentDisconnected(true);
@@ -168,16 +166,12 @@ export function useWebRTCGame({
     currentRoomIdRef.current = null;
     roleRef.current = null;
     localOfferRef.current = null;
-    lastSeenMoveCountRef.current = 0;
   };
 
   useEffect(() => {
     return () => cleanupConnection();
   }, []);
 
-  /**
-   * 1. AUTO MATCHMAKING (Global Realtime PubSub)
-   */
   const startAutoMatch = async (preferredRole: 'any' | 'tiger' | 'goat' = 'any') => {
     cleanupConnection();
     setIsSearching(true);
@@ -288,9 +282,6 @@ export function useWebRTCGame({
     setMatchStatusText('Search cancelled.');
   };
 
-  /**
-   * 2. PRIVATE CUSTOM ROOM
-   */
   const joinCustomRoom = async (roomId: string, asHost: boolean) => {
     cleanupConnection();
     setIsSearching(false);
@@ -300,9 +291,6 @@ export function useWebRTCGame({
     setupRoom(roomId, role, asHost ? 'Waiting for Friend...' : 'Room Host', asHost, !asHost);
   };
 
-  /**
-   * 3. ROOM SETUP & WEBRTC P2P + MULTI-TIER SIGNALING
-   */
   const setupRoom = async (
     roomId: string,
     role: PlayerRole,
@@ -331,12 +319,9 @@ export function useWebRTCGame({
     }
 
     const roomTopic = getCleanTopic(roomId);
-
-    // 1. Realtime Primary WebSocket
     const ws = new WebSocket(`${NTFY_WS_BASE}/${roomTopic}/ws`);
     roomWsRef.current = ws;
 
-    // 2. Upstash Redis Fallback Polling (polls every 2.5s)
     redisPollIntervalRef.current = window.setInterval(async () => {
       if (dcRef.current && dcRef.current.readyState === 'open') return;
       try {
@@ -463,7 +448,7 @@ export function useWebRTCGame({
           }
         }
 
-        if (msg.type === 'move' || msg.type === 'ledger_block') {
+        if (msg.type === 'ledger_block') {
           const expectedSender = isInitiator ? 'guest' : 'host';
           if (msg.sender === expectedSender) {
             if (msg.block) {
@@ -499,9 +484,6 @@ export function useWebRTCGame({
     }
   };
 
-  /**
-   * 4. DATACHANNEL & DELTA SYNCHRONIZATION VIA BLOCKCHAIN LEDGER
-   */
   const attachDataChannel = (dc: RTCDataChannel) => {
     dcRef.current = dc;
 
@@ -511,7 +493,6 @@ export function useWebRTCGame({
       setRoomInfo((prev) => (prev ? { ...prev, connected: true, usingP2P: true } : null));
       setMatchStatusText('Direct P2P WebRTC Connected (<10ms)!');
 
-      // Request missing ledger blocks on reconnect
       try {
         dc.send(
           JSON.stringify({
@@ -532,33 +513,19 @@ export function useWebRTCGame({
       try {
         const payload = JSON.parse(event.data);
 
-        if (payload.type === 'ledger_block' || payload.type === 'move') {
-          if (payload.state?.moveHistory) {
-            lastSeenMoveCountRef.current = payload.state.moveHistory.length;
-          }
-
+        if (payload.type === 'ledger_block') {
           if (payload.block) {
-            const isValid = await ledgerRef.current.verifyAndAppendBlock(payload.block);
-            if (isValid) {
+            const valid = await ledgerRef.current.verifyAndAppendBlock(payload.block);
+            if (valid) {
               setLedgerChain([...ledgerRef.current.chain]);
-            } else {
-              // Out of sync gap: request missing blocks
-              dc.send(
-                JSON.stringify({
-                  type: 'sync_ledger_req',
-                  fromIndex: ledgerRef.current.chain.length,
-                })
-              );
             }
           }
           onRemoteMove(payload.move, payload.state, payload.block);
         } else if (payload.type === 'restart') {
-          lastSeenMoveCountRef.current = 0;
           ledgerRef.current.reset();
           setLedgerChain([]);
           onRemoteRestart();
         } else if (payload.type === 'sync_ledger_req') {
-          // Serve missing block delta
           const missingBlocks = ledgerRef.current.getBlocksFrom(payload.fromIndex || 0);
           dc.send(
             JSON.stringify({
@@ -585,14 +552,7 @@ export function useWebRTCGame({
     };
   };
 
-  /**
-   * 5. BROADCAST MOVE (Carries cryptographic block transaction)
-   */
   const sendMove = (move: Move, nextState: GameState, block?: LedgerBlock) => {
-    if (nextState?.moveHistory) {
-      lastSeenMoveCountRef.current = nextState.moveHistory.length;
-    }
-
     if (block) {
       setLedgerChain([...ledgerRef.current.chain]);
     }
@@ -617,11 +577,7 @@ export function useWebRTCGame({
     }
   };
 
-  /**
-   * 6. BROADCAST RESTART
-   */
   const sendRestart = () => {
-    lastSeenMoveCountRef.current = 0;
     ledgerRef.current.reset();
     setLedgerChain([]);
 
@@ -650,7 +606,6 @@ export function useWebRTCGame({
     isOpponentDisconnected,
     disconnectSecondsLeft,
     ledgerChain,
-    ledgerInstance: ledgerRef.current,
     startAutoMatch,
     cancelAutoMatch,
     joinCustomRoom,

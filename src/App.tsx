@@ -5,7 +5,6 @@ import {
   applyMove,
   getTrappedTigersInfo,
   getAllGoatMoves,
-  getAllTigerMoves,
   getTigerMovesForPos,
 } from './game/rules';
 import { getAIMove, getAdaptiveAIDetails } from './game/ai';
@@ -55,7 +54,7 @@ export default function App() {
   const [difficulty, setDifficulty] = useState<AIDifficulty>('medium');
   const [profile, setProfile] = useState<PlayerProfile>(loadPlayerProfile);
 
-  // Blockchain Ledger State
+  // Blockchain Ledger State (Audit & Fly Menu Log)
   const [localLedger] = useState(() => new BaghchalLedger());
   const [ledgerChain, setLedgerChain] = useState<LedgerBlock[]>([]);
   const [showLedgerMenu, setShowLedgerMenu] = useState(false);
@@ -94,7 +93,12 @@ export default function App() {
   } = useWebRTCGame({
     playerName: profile.name,
     gameState,
-    onRemoteMove: (remoteMove, nextState, block) => {
+    onRemoteMove: async (remoteMove, nextState, block) => {
+      if (block) {
+        await localLedger.verifyAndAppendBlock(block);
+        setLedgerChain([...localLedger.chain]);
+      }
+
       if (remoteMove?.type === 'jump') {
         sound.playAttack();
         triggerTelegramHaptic('heavy');
@@ -104,12 +108,6 @@ export default function App() {
       } else if (remoteMove) {
         sound.playMove(remoteMove.piece);
         triggerTelegramHaptic('medium');
-      }
-
-      if (block) {
-        localLedger.verifyAndAppendBlock(block).then(() => {
-          setLedgerChain([...localLedger.chain]);
-        });
       }
 
       const beforeTrapped = getTrappedTigersInfo(gameStateRef.current.board).trappedCount;
@@ -145,7 +143,6 @@ export default function App() {
     },
   });
 
-  // Keep active chain updated from either local or remote
   const activeChain = mode === 'online' && remoteLedgerChain.length > 0 ? remoteLedgerChain : ledgerChain;
 
   // Telegram WebApp Initialization
@@ -228,27 +225,23 @@ export default function App() {
     return false;
   }, [gameState.status, gameState.turn, mode, isAiThinking, aiUserRole, roomInfo]);
 
-  // Compute strictly valid moves for currently selected node or placement
+  // Compute strictly valid moves using core rules engine
   const currentValidMoves = useCallback((): Move[] => {
     if (!isUserTurn()) return [];
 
-    // Goat placement phase: can place at any empty node
     if (gameState.turn === 'goat' && gameState.phase === 'placement') {
       return getAllGoatMoves(gameState.board, gameState.goatsInReserve);
     }
 
-    // Movement phase: must have selected a node
     if (selectedPos === null) return [];
 
     const piece = gameState.board[selectedPos];
     if (piece !== gameState.turn) return [];
 
-    // Tiger turn: calculate valid moves and jumps for selected tiger
     if (piece === 'tiger') {
       return getTigerMovesForPos(gameState.board, selectedPos);
     }
 
-    // Goat movement phase: calculate adjacent sliding moves
     if (piece === 'goat' && gameState.phase === 'movement') {
       const allGoatMoves = getAllGoatMoves(gameState.board, 0);
       return allGoatMoves.filter((m) => m.from === selectedPos);
@@ -320,7 +313,6 @@ export default function App() {
       });
       setProfile(updated);
 
-      // Submit score to Cloudflare Leaderboard
       const winnerName = userWon ? profile.name : opponentName;
       const winnerId = userWon ? `p_${profile.name.toLowerCase().replace(/[^a-z0-9]/g, '')}` : `p_opp_${Date.now()}`;
       const loserName = userWon ? opponentName : profile.name;
@@ -382,7 +374,10 @@ export default function App() {
   const executeMove = async (move: Move) => {
     const currentState = gameStateRef.current;
 
-    // 1. Create and append Blockchain Ledger Block
+    // 1. Standard deterministic rules engine execution
+    const nextState = applyMove(currentState, move);
+
+    // 2. Mint and append Blockchain Ledger Block for Audit/FlyMenu
     const capturedPos = move.type === 'jump' ? move.captured : undefined;
     const block = await localLedger.createBlock(currentState.turn, move, capturedPos);
     await localLedger.verifyAndAppendBlock(block);
@@ -400,7 +395,8 @@ export default function App() {
     }
 
     setHistoryStack((prev) => [...prev, currentState]);
-    const nextState = applyMove(currentState, move);
+    setGameState(nextState);
+    setSelectedPos(null);
 
     const beforeTrapped = getTrappedTigersInfo(currentState.board).trappedCount;
     const afterTrapped = getTrappedTigersInfo(nextState.board).trappedCount;
@@ -408,9 +404,6 @@ export default function App() {
       sound.playTrap();
       triggerTelegramHaptic('success');
     }
-
-    setGameState(nextState);
-    setSelectedPos(null);
 
     if (mode === 'online') {
       sendMove(move, nextState, block);
@@ -422,7 +415,6 @@ export default function App() {
 
     const pieceAtNode = gameState.board[pos];
 
-    // 1. Placement phase for Goats: tap empty node
     if (
       gameState.turn === 'goat' &&
       gameState.phase === 'placement' &&
@@ -436,14 +428,12 @@ export default function App() {
       return;
     }
 
-    // 2. Clicked a valid destination for selected piece
     const matchedMove = validMoves.find((m) => m.to === pos);
     if (matchedMove) {
       executeMove(matchedMove);
       return;
     }
 
-    // 3. Selection of piece to move
     if (pieceAtNode === gameState.turn) {
       setSelectedPos(selectedPos === pos ? null : pos);
       triggerTelegramHaptic('selection');
