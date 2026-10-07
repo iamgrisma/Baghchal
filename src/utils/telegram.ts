@@ -57,17 +57,45 @@ declare global {
 
 export function isTelegramWebApp(): boolean {
   if (typeof window === 'undefined') return false;
+  if ((window as any).Capacitor?.isNativePlatform?.()) return false;
   return Boolean(window.Telegram?.WebApp?.initData !== undefined && window.Telegram.WebApp.initData !== '');
 }
 
 export function initTelegramWebApp(): void {
   if (typeof window === 'undefined') return;
+  // If running in native Android/iOS Capacitor app, skip Telegram entirely!
+  if ((window as any).Capacitor?.isNativePlatform?.()) return;
+
+  const isInsideTelegram =
+    window.location.search.includes('tgWebAppData') ||
+    window.location.hash.includes('tgWebAppData') ||
+    Boolean(window.Telegram?.WebApp);
+
+  if (!isInsideTelegram) return;
+
+  if (!window.Telegram?.WebApp) {
+    const script = document.createElement('script');
+    script.src = 'https://telegram.org/js/telegram-web-app.js';
+    script.async = true;
+    script.onload = () => {
+      const webApp = window.Telegram?.WebApp;
+      if (webApp) {
+        try {
+          webApp.ready?.();
+          webApp.expand?.();
+        } catch (e) {}
+      }
+    };
+    document.head.appendChild(script);
+    return;
+  }
+
   const webApp = window.Telegram?.WebApp;
   if (!webApp) return;
 
   try {
-    webApp.ready();
-    webApp.expand();
+    webApp.ready?.();
+    webApp.expand?.();
 
     if (webApp.setHeaderColor) {
       webApp.setHeaderColor('#0c0a09');

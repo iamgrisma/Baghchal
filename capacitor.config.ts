@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     androidScheme: 'https',
-    cleartext: false,
+    cleartext: true,
   },
   plugins: {
     StatusBar: {
@@ -15,9 +15,9 @@ const config: CapacitorConfig = {
     },
   },
   android: {
-    allowMixedContent: false,
+    allowMixedContent: true,
     captureInput: true,
-    webContentsDebuggingEnabled: false,
+    webContentsDebuggingEnabled: true,
   },
   ios: {
     contentInset: 'always',
