@@ -16,53 +16,49 @@ interface BaghchalBoardProps {
 }
 
 interface ThemeConfig {
-  containerBg: string;
-  cornerBorder: string;
+  frameOuter: string;
+  frameInner: string;
   boardSurface: string;
-  boardBorder: string;
-  linePrimary: string;
-  lineSecondary: string;
-  grooveStroke: string;
-  studFill: string;
-  studStroke: string;
+  grooveDark: string;
+  brassLine: string;
+  brassLineBorder: string;
+  studColor: string;
+  studRing: string;
   accentGlow: string;
 }
 
 const THEME_STYLES: Record<BoardTheme, ThemeConfig> = {
   classic: {
-    containerBg: 'from-stone-900 via-stone-925 to-stone-950 border-stone-800 ring-amber-950/40 shadow-2xl',
-    cornerBorder: 'border-amber-600/60',
-    boardSurface: '#1c1917',
-    boardBorder: '#44403c',
-    linePrimary: '#f59e0b',
-    lineSecondary: '#d97706',
-    grooveStroke: '#0c0a09',
-    studFill: '#292524',
-    studStroke: '#78350f',
+    frameOuter: '#1c140e',
+    frameInner: '#2e1c12',
+    boardSurface: '#16100c',
+    grooveDark: '#080504',
+    brassLine: '#f59e0b',
+    brassLineBorder: '#b45309',
+    studColor: '#d97706',
+    studRing: '#78350f',
     accentGlow: '#f59e0b',
   },
   slate: {
-    containerBg: 'from-slate-900 via-slate-950 to-stone-950 border-cyan-900/50 ring-cyan-950/50 shadow-2xl',
-    cornerBorder: 'border-cyan-500/60',
-    boardSurface: '#0f172a',
-    boardBorder: '#334155',
-    linePrimary: '#38bdf8',
-    lineSecondary: '#0284c7',
-    grooveStroke: '#020617',
-    studFill: '#1e293b',
-    studStroke: '#0369a1',
+    frameOuter: '#090d16',
+    frameInner: '#111827',
+    boardSurface: '#0b1120',
+    grooveDark: '#020617',
+    brassLine: '#38bdf8',
+    brassLineBorder: '#0284c7',
+    studColor: '#0ea5e9',
+    studRing: '#0369a1',
     accentGlow: '#38bdf8',
   },
   midnight: {
-    containerBg: 'from-zinc-950 via-purple-950/30 to-black border-purple-900/50 ring-purple-950/60 shadow-2xl',
-    cornerBorder: 'border-purple-500/60',
-    boardSurface: '#09090b',
-    boardBorder: '#27272a',
-    linePrimary: '#c084fc',
-    lineSecondary: '#9333ea',
-    grooveStroke: '#000000',
-    studFill: '#18181b',
-    studStroke: '#581c87',
+    frameOuter: '#090514',
+    frameInner: '#170b2c',
+    boardSurface: '#0d0618',
+    grooveDark: '#020005',
+    brassLine: '#c084fc',
+    brassLineBorder: '#9333ea',
+    studColor: '#a855f7',
+    studRing: '#6b21a8',
     accentGlow: '#c084fc',
   },
 };
@@ -82,7 +78,7 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
   const currentTheme = THEME_STYLES[theme] || THEME_STYLES.classic;
 
   const SIZE = 500;
-  const PADDING = 46;
+  const PADDING = 48;
   const STEP = (SIZE - 2 * PADDING) / 4;
 
   const nodeCoords = useMemo(() => {
@@ -106,74 +102,100 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
     return map;
   }, [validMoves]);
 
-  const capturedGoatPositions = useMemo(() => {
-    const set = new Set<number>();
-    for (const m of validMoves) {
-      if (m.type === 'jump' && m.captured !== undefined) {
-        set.add(m.captured);
-      }
-    }
-    return set;
-  }, [validMoves]);
-
   return (
     <div className="relative w-full aspect-square max-w-[min(94vw,460px)] mx-auto touch-none select-none flex items-center justify-center">
-      <div
-        className={`relative w-full h-full rounded-3xl bg-gradient-to-br ${currentTheme.containerBg} p-2 sm:p-2.5 border-2 ring-1 flex items-center justify-center overflow-hidden`}
-      >
-        {/* Subtle Nepali Corner Inlays */}
-        <div
-          className={`absolute top-2.5 left-2.5 w-4 h-4 border-t-2 border-l-2 ${currentTheme.cornerBorder} rounded-tl-sm pointer-events-none`}
-        />
-        <div
-          className={`absolute top-2.5 right-2.5 w-4 h-4 border-t-2 border-r-2 ${currentTheme.cornerBorder} rounded-tr-sm pointer-events-none`}
-        />
-        <div
-          className={`absolute bottom-2.5 left-2.5 w-4 h-4 border-b-2 border-l-2 ${currentTheme.cornerBorder} rounded-bl-sm pointer-events-none`}
-        />
-        <div
-          className={`absolute bottom-2.5 right-2.5 w-4 h-4 border-b-2 border-r-2 ${currentTheme.cornerBorder} rounded-br-sm pointer-events-none`}
-        />
-
+      <div className="relative w-full h-full rounded-3xl p-2 sm:p-2.5 shadow-2xl border-2 border-stone-800/80 bg-gradient-to-br from-stone-900 via-stone-950 to-black overflow-hidden flex items-center justify-center">
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full overflow-visible">
           <defs>
-            <filter id="goldGlow" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor={currentTheme.accentGlow} floodOpacity="0.85" />
+            {/* Realistic Token Drop Shadows */}
+            <filter id="pieceShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000000" floodOpacity="0.75" />
             </filter>
-            <filter id="crimsonGlow" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#ef4444" floodOpacity="0.8" />
+            <filter id="liftedShadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="10" stdDeviation="7" floodColor="#000000" floodOpacity="0.9" />
+              <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor={currentTheme.accentGlow} floodOpacity="0.6" />
             </filter>
-            <filter id="pieceShadow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000000" floodOpacity="0.6" />
+            <filter id="boardInsetShadow" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000000" floodOpacity="0.8" />
             </filter>
 
-            <linearGradient id="tigerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#fb923c" />
-              <stop offset="50%" stopColor="#ea580c" />
-              <stop offset="100%" stopColor="#9a3412" />
+            {/* 3D Bronze Tiger Token Gradients */}
+            <radialGradient id="tigerFaceGrad" cx="35%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#f59e0b" />
+              <stop offset="50%" stopColor="#d97706" />
+              <stop offset="85%" stopColor="#b45309" />
+              <stop offset="100%" stopColor="#78350f" />
+            </radialGradient>
+            <linearGradient id="tigerRimGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#fef08a" />
+              <stop offset="40%" stopColor="#d97706" />
+              <stop offset="100%" stopColor="#451a03" />
             </linearGradient>
 
-            <linearGradient id="goatGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            {/* 3D Ivory Goat Token Gradients */}
+            <radialGradient id="goatFaceGrad" cx="35%" cy="30%" r="70%">
               <stop offset="0%" stopColor="#ffffff" />
-              <stop offset="60%" stopColor="#e2e8f0" />
+              <stop offset="55%" stopColor="#f1f5f9" />
+              <stop offset="85%" stopColor="#cbd5e1" />
               <stop offset="100%" stopColor="#94a3b8" />
+            </radialGradient>
+            <linearGradient id="goatRimGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#ffffff" />
+              <stop offset="50%" stopColor="#cbd5e1" />
+              <stop offset="100%" stopColor="#475569" />
             </linearGradient>
+
+            {/* Beveled Wood Table Surface */}
+            <radialGradient id="woodSurfaceGrad" cx="50%" cy="50%" r="75%">
+              <stop offset="0%" stopColor={currentTheme.frameInner} />
+              <stop offset="100%" stopColor={currentTheme.boardSurface} />
+            </radialGradient>
           </defs>
 
-          {/* Board Background Surface */}
+          {/* 1. PHYSICAL 3D BEVELED BOARD RIM */}
           <rect
-            x={PADDING - 14}
-            y={PADDING - 14}
-            width={SIZE - 2 * PADDING + 28}
-            height={SIZE - 2 * PADDING + 28}
-            rx="16"
-            fill={currentTheme.boardSurface}
-            stroke={currentTheme.boardBorder}
-            strokeWidth="1.5"
+            x="8"
+            y="8"
+            width={SIZE - 16}
+            height={SIZE - 16}
+            rx="24"
+            fill={currentTheme.frameOuter}
+            stroke="#000000"
+            strokeWidth="3"
+          />
+          <rect
+            x="14"
+            y="14"
+            width={SIZE - 28}
+            height={SIZE - 28}
+            rx="20"
+            fill="url(#woodSurfaceGrad)"
+            stroke={currentTheme.frameInner}
+            strokeWidth="2.5"
+            filter="url(#boardInsetShadow)"
           />
 
-          {/* Carved Groove Base Layer */}
-          <g stroke={currentTheme.grooveStroke} strokeWidth="4.5" strokeLinecap="round">
+          {/* Brass Corner Brackets */}
+          {[
+            [20, 20],
+            [SIZE - 36, 20],
+            [20, SIZE - 36],
+            [SIZE - 36, SIZE - 36],
+          ].map(([bx, by], idx) => (
+            <rect
+              key={`corner-${idx}`}
+              x={bx}
+              y={by}
+              width="16"
+              height="16"
+              rx="4"
+              fill={currentTheme.brassLine}
+              opacity="0.25"
+            />
+          ))}
+
+          {/* 2. RECESSED CARVED GROOVES */}
+          <g stroke={currentTheme.grooveDark} strokeWidth="5.5" strokeLinecap="round">
             <rect x={PADDING} y={PADDING} width={SIZE - 2 * PADDING} height={SIZE - 2 * PADDING} fill="none" />
             {[1, 2, 3].map((r) => (
               <line key={`gh-${r}`} x1={PADDING} y1={PADDING + r * STEP} x2={SIZE - PADDING} y2={PADDING + r * STEP} />
@@ -189,46 +211,24 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             <line x1={SIZE - PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={PADDING} />
           </g>
 
-          {/* Active Grid Lines */}
-          <g stroke={currentTheme.lineSecondary} strokeWidth="2.5" strokeLinecap="round">
-            <rect
-              x={PADDING}
-              y={PADDING}
-              width={SIZE - 2 * PADDING}
-              height={SIZE - 2 * PADDING}
-              fill="none"
-              stroke={currentTheme.linePrimary}
-              strokeWidth="3.5"
-            />
+          {/* 3. POLISHED INLAID BRASS CHANNELS */}
+          <g stroke={currentTheme.brassLine} strokeWidth="2.8" strokeLinecap="round">
+            <rect x={PADDING} y={PADDING} width={SIZE - 2 * PADDING} height={SIZE - 2 * PADDING} fill="none" strokeWidth="3.6" />
             {[1, 2, 3].map((r) => (
-              <line
-                key={`h-${r}`}
-                x1={PADDING}
-                y1={PADDING + r * STEP}
-                x2={SIZE - PADDING}
-                y2={PADDING + r * STEP}
-                stroke={currentTheme.linePrimary}
-              />
+              <line key={`h-${r}`} x1={PADDING} y1={PADDING + r * STEP} x2={SIZE - PADDING} y2={PADDING + r * STEP} />
             ))}
             {[1, 2, 3].map((c) => (
-              <line
-                key={`v-${c}`}
-                x1={PADDING + c * STEP}
-                y1={PADDING}
-                x2={PADDING + c * STEP}
-                y2={SIZE - PADDING}
-                stroke={currentTheme.linePrimary}
-              />
+              <line key={`v-${c}`} x1={PADDING + c * STEP} y1={PADDING} x2={PADDING + c * STEP} y2={SIZE - PADDING} />
             ))}
-            <line x1={PADDING} y1={PADDING} x2={SIZE - PADDING} y2={SIZE - PADDING} stroke={currentTheme.lineSecondary} />
-            <line x1={SIZE - PADDING} y1={PADDING} x2={PADDING} y2={SIZE - PADDING} stroke={currentTheme.lineSecondary} />
-            <line x1={PADDING + 2 * STEP} y1={PADDING} x2={PADDING} y2={PADDING + 2 * STEP} stroke={currentTheme.lineSecondary} />
-            <line x1={PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={SIZE - PADDING} stroke={currentTheme.lineSecondary} />
-            <line x1={PADDING + 2 * STEP} y1={SIZE - PADDING} x2={SIZE - PADDING} y2={PADDING + 2 * STEP} stroke={currentTheme.lineSecondary} />
-            <line x1={SIZE - PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={PADDING} stroke={currentTheme.lineSecondary} />
+            <line x1={PADDING} y1={PADDING} x2={SIZE - PADDING} y2={SIZE - PADDING} />
+            <line x1={SIZE - PADDING} y1={PADDING} x2={PADDING} y2={SIZE - PADDING} />
+            <line x1={PADDING + 2 * STEP} y1={PADDING} x2={PADDING} y2={PADDING + 2 * STEP} />
+            <line x1={PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={SIZE - PADDING} />
+            <line x1={PADDING + 2 * STEP} y1={SIZE - PADDING} x2={SIZE - PADDING} y2={PADDING + 2 * STEP} />
+            <line x1={SIZE - PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={PADDING} />
           </g>
 
-          {/* Move Trail */}
+          {/* Last Move Trail */}
           {lastMove && lastMove.from !== undefined && (
             <line
               x1={nodeCoords[lastMove.from].x}
@@ -238,171 +238,102 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
               stroke={lastMove.type === 'jump' ? '#ef4444' : currentTheme.accentGlow}
               strokeWidth={lastMove.type === 'jump' ? '4.5' : '3'}
               strokeDasharray={lastMove.type === 'jump' ? '8 4' : '6 4'}
-              strokeOpacity={lastMove.type === 'jump' ? '0.95' : '0.6'}
+              strokeOpacity="0.9"
             />
           )}
 
-          {/* Captured Slash Indicator */}
-          {lastMove && lastMove.type === 'jump' && lastMove.captured !== undefined && (
-            <g>
-              <circle
-                cx={nodeCoords[lastMove.captured].x}
-                cy={nodeCoords[lastMove.captured].y}
-                r="22"
-                fill="rgba(239, 68, 68, 0.35)"
-                stroke="#ef4444"
-                strokeWidth="2.5"
-                className="animate-ping"
-              />
-              <g transform={`translate(${nodeCoords[lastMove.captured].x}, ${nodeCoords[lastMove.captured].y})`}>
-                <line x1="-12" y1="-14" x2="-2" y2="14" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
-                <line x1="-2" y1="-16" x2="8" y2="12" stroke="#dc2626" strokeWidth="3.5" strokeLinecap="round" />
-                <line x1="8" y1="-13" x2="16" y2="13" stroke="#991b1b" strokeWidth="3" strokeLinecap="round" />
-              </g>
-            </g>
-          )}
-
-          {/* Intersection Points & Nodes */}
+          {/* 4. INTERSECTION STUDS & GAME TOKENS */}
           {nodeCoords.map((pos, idx) => {
             const piece = board[idx];
             const isSelected = selectedPos === idx;
             const validMove = validDestinationMap.get(idx);
             const isTarget = !!validMove;
             const isJumpTarget = validMove?.type === 'jump';
-            const isCapturedGoat = capturedGoatPositions.has(idx);
             const isTrappedTiger = piece === 'tiger' && trappedInfo.trappedIndices.includes(idx);
-            const isLastMoveDestination = lastMove?.to === idx;
 
             return (
               <g
                 key={`node-${idx}`}
-                id={`board-node-${idx}`}
                 onClick={() => isInteractive && onNodeClick(idx)}
                 className={isInteractive ? 'cursor-pointer' : ''}
               >
-                {/* Node Stud */}
-                <circle
-                  cx={pos.x}
-                  cy={pos.y}
-                  r="5.5"
-                  fill={currentTheme.studFill}
-                  stroke={currentTheme.studStroke}
-                  strokeWidth="1.5"
-                />
+                {/* Brass Rivet Stud */}
+                <circle cx={pos.x} cy={pos.y} r="5" fill={currentTheme.studColor} stroke={currentTheme.studRing} strokeWidth="1.6" />
+                <circle cx={pos.x - 1.2} cy={pos.y - 1.2} r="1.5" fill="#ffffff" opacity="0.6" />
 
-                {/* Last Move Halo Ring */}
-                {isLastMoveDestination && !isSelected && (
-                  <circle
-                    cx={pos.x}
-                    cy={pos.y}
-                    r={piece === 'tiger' ? 26 : 23}
-                    fill="none"
-                    stroke={currentTheme.accentGlow}
-                    strokeWidth="2"
-                    strokeDasharray="4 3"
-                    className="animate-spin-slow"
-                  />
-                )}
-
-                {/* Valid Destination Indicators */}
+                {/* Tactical Beacon for valid placements/moves */}
                 {isTarget && (
                   <g className="transition-transform duration-150 hover:scale-110">
-                    {phase === 'placement' ? (
-                      <>
-                        <circle
-                          cx={pos.x}
-                          cy={pos.y}
-                          r="12"
-                          fill="rgba(245, 158, 11, 0.16)"
-                          stroke={currentTheme.linePrimary}
-                          strokeWidth="1.5"
-                          strokeDasharray="3 2"
-                        />
-                        <circle cx={pos.x} cy={pos.y} r="4.5" fill={currentTheme.linePrimary} />
-                      </>
-                    ) : (
-                      <>
-                        <circle
-                          cx={pos.x}
-                          cy={pos.y}
-                          r={isJumpTarget ? 20 : 16}
-                          fill={isJumpTarget ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.25)'}
-                          stroke={isJumpTarget ? '#ef4444' : currentTheme.linePrimary}
-                          strokeWidth={isJumpTarget ? 2.5 : 2}
-                          className="animate-pulse"
-                        />
-                        <circle cx={pos.x} cy={pos.y} r={isJumpTarget ? 6.5 : 5} fill={isJumpTarget ? '#ef4444' : currentTheme.linePrimary} />
-                      </>
-                    )}
-                  </g>
-                )}
-
-                {/* Pieces */}
-                {piece && (
-                  <g
-                    filter={
-                      isSelected
-                        ? 'url(#goldGlow)'
-                        : isCapturedGoat
-                        ? 'url(#crimsonGlow)'
-                        : 'url(#pieceShadow)'
-                    }
-                  >
                     <circle
                       cx={pos.x}
                       cy={pos.y}
-                      r={piece === 'tiger' ? 22.5 : 19.5}
-                      fill={piece === 'tiger' ? 'url(#tigerGrad)' : 'url(#goatGrad)'}
-                      stroke={
-                        isSelected
-                          ? '#fde047'
-                          : isCapturedGoat
-                          ? '#ef4444'
-                          : piece === 'tiger'
-                          ? '#78350f'
-                          : '#475569'
-                      }
-                      strokeWidth={isSelected ? 3.5 : 2}
-                      className="transition-transform duration-150"
+                      r={isJumpTarget ? 18 : 14}
+                      fill={isJumpTarget ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.22)'}
+                      stroke={isJumpTarget ? '#ef4444' : currentTheme.brassLine}
+                      strokeWidth={isJumpTarget ? 2.5 : 2}
+                      className="animate-pulse"
                     />
+                    <circle cx={pos.x} cy={pos.y} r={isJumpTarget ? 6 : 4.5} fill={isJumpTarget ? '#ef4444' : currentTheme.brassLine} />
+                  </g>
+                )}
 
-                    {/* Tiger Face Detail */}
+                {/* 5. WEIGHTED 3D GAME TOKENS */}
+                {piece && (
+                  <g
+                    transform={isSelected ? `translate(0, -6) scale(1.08)` : undefined}
+                    filter={isSelected ? 'url(#liftedShadow)' : 'url(#pieceShadow)'}
+                    className="transition-transform duration-200"
+                  >
+                    {/* A. TIGER TOKEN (Sculpted Bronze Medallion) */}
                     {piece === 'tiger' && (
-                      <g transform={`translate(${pos.x - 13}, ${pos.y - 13}) scale(1.1)`}>
-                        <path d="M4 6 C2 1 6 0 8 4 Z" fill="#451a03" />
-                        <path d="M20 6 C22 1 18 0 16 4 Z" fill="#451a03" />
-                        <circle cx="8" cy="11" r="1.6" fill="#fef08a" />
-                        <circle cx="16" cy="11" r="1.6" fill="#fef08a" />
-                        <polygon points="12,14 10,12 14,12" fill="#451a03" />
-                        <path d="M9 16 C11 17.5 13 17.5 15 16" stroke="#451a03" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-                        <line x1="12" y1="4.5" x2="12" y2="8" stroke="#451a03" strokeWidth="1.5" />
+                      <g>
+                        <circle cx={pos.x} cy={pos.y + 1.5} r="22" fill="url(#tigerRimGrad)" />
+                        <circle cx={pos.x} cy={pos.y} r="21.5" fill="url(#tigerFaceGrad)" stroke="#fde047" strokeWidth={isSelected ? 2.5 : 1.2} />
+                        <circle cx={pos.x} cy={pos.y} r="18.5" fill="none" stroke="#78350f" strokeWidth="1.2" opacity="0.8" />
+                        <path d={`M${pos.x - 14} ${pos.y - 10} C${pos.x - 8} ${pos.y - 18} ${pos.x + 8} ${pos.y - 18} ${pos.x + 14} ${pos.y - 10}`} fill="none" stroke="#fef08a" strokeWidth="1.4" opacity="0.75" />
+
+                        {/* Embossed Tiger Face */}
+                        <g transform={`translate(${pos.x - 11}, ${pos.y - 11})`}>
+                          <path d="M4 6 C2 1 6 0 8 4 Z" fill="#291204" />
+                          <path d="M18 6 C20 1 16 0 14 4 Z" fill="#291204" />
+                          <circle cx="7.5" cy="10" r="1.5" fill="#fef08a" />
+                          <circle cx="14.5" cy="10" r="1.5" fill="#fef08a" />
+                          <circle cx="7.5" cy="10" r="0.6" fill="#1c1917" />
+                          <circle cx="14.5" cy="10" r="0.6" fill="#1c1917" />
+                          <polygon points="11,12.5 9,11 13,11" fill="#291204" />
+                          <path d="M8 14 C10 15.5 12 15.5 14 14" stroke="#291204" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+                          <line x1="11" y1="4.5" x2="11" y2="7.5" stroke="#291204" strokeWidth="1.5" strokeLinecap="round" />
+                        </g>
+
+                        {/* Trapped State Ring */}
+                        {isTrappedTiger && (
+                          <circle cx={pos.x} cy={pos.y} r="24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeDasharray="5 3" className="animate-spin-slow" />
+                        )}
                       </g>
                     )}
 
-                    {/* Goat Face Detail */}
+                    {/* B. GOAT TOKEN (Carved Ivory / Marble Stone) */}
                     {piece === 'goat' && (
-                      <g transform={`translate(${pos.x - 12}, ${pos.y - 12})`}>
-                        <path d="M6 9 C4 3 8 1 10 6" stroke="#1e293b" strokeWidth="2" fill="none" strokeLinecap="round" />
-                        <path d="M18 9 C20 3 16 1 14 6" stroke="#1e293b" strokeWidth="2" fill="none" strokeLinecap="round" />
-                        <circle cx="8" cy="13" r="1.5" fill="#0f172a" />
-                        <circle cx="16" cy="13" r="1.5" fill="#0f172a" />
-                        <path d="M10 16 C11 18 13 18 14 16" stroke="#334155" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-                      </g>
-                    )}
+                      <g>
+                        <circle cx={pos.x} cy={pos.y + 1.2} r="18.5" fill="url(#goatRimGrad)" />
+                        <circle cx={pos.x} cy={pos.y} r="18" fill="url(#goatFaceGrad)" stroke="#ffffff" strokeWidth={isSelected ? 2.5 : 1} />
+                        <circle cx={pos.x} cy={pos.y} r="15" fill="none" stroke="#cbd5e1" strokeWidth="1" opacity="0.9" />
+                        <path d={`M${pos.x - 11} ${pos.y - 8} C${pos.x - 6} ${pos.y - 14} ${pos.x + 6} ${pos.y - 14} ${pos.x + 11} ${pos.y - 8}`} fill="none" stroke="#ffffff" strokeWidth="1.6" opacity="0.9" />
 
-                    {/* Trapped Tiger Warning Badge */}
-                    {isTrappedTiger && (
-                      <g transform={`translate(${pos.x + 8}, ${pos.y - 15})`}>
-                        <circle cx="5" cy="5" r="7" fill="#ef4444" stroke="#ffffff" strokeWidth="1.2" />
-                        <text x="5" y="8" textAnchor="middle" fontSize="9" fontWeight="900" fill="#ffffff">
-                          ✕
-                        </text>
+                        {/* Carved Mountain Goat Emblem */}
+                        <g transform={`translate(${pos.x - 10}, ${pos.y - 10})`}>
+                          <path d="M5 8 C3 2 7 0.5 9 5" stroke="#1e293b" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+                          <path d="M15 8 C17 2 13 0.5 11 5" stroke="#1e293b" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+                          <circle cx="7" cy="11.5" r="1.3" fill="#0f172a" />
+                          <circle cx="13" cy="11.5" r="1.3" fill="#0f172a" />
+                          <path d="M8.5 14 C10 15.5 11.5 15.5 13 14" stroke="#334155" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+                        </g>
                       </g>
                     )}
                   </g>
                 )}
 
-                {/* Responsive Touch Hitbox */}
+                {/* Touch Hitbox */}
                 <circle cx={pos.x} cy={pos.y} r="25" fill="transparent" className="cursor-pointer active:opacity-20" />
               </g>
             );

@@ -72,7 +72,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           Classic Himalayan tactical warfare. Command the 4 tigers or mobilize the herd of 20 goats to triumph.
         </p>
 
-        {/* Action Button: Android Material Filled Button */}
+        {/* Action Button */}
         <div className="w-full max-w-xs mt-8">
           <button
             id="splash-play-button"
@@ -87,7 +87,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
       {/* Footer System Info */}
       <footer className="w-full max-w-md text-center text-xs text-stone-500 py-3 border-t border-stone-900">
-        Version 1.0.1 · Offline & P2P Multiplayer
+        Version 1.0.3 · Offline & P2P Multiplayer
       </footer>
     </div>
   );
