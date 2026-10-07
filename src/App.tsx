@@ -27,6 +27,7 @@ import { TigerIcon, GoatIcon } from './components/GameIcons';
 import { BaghchalBoard } from './components/BaghchalBoard';
 import { SplashScreen } from './components/SplashScreen';
 import { GameSetupScreen } from './components/GameSetupScreen';
+import { SideDrawer } from './components/SideDrawer';
 import { RulesModal } from './components/RulesModal';
 import { ProfileModal } from './components/ProfileModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
@@ -34,20 +35,9 @@ import { OnlineLobbyModal } from './components/OnlineLobbyModal';
 import { GameOverModal } from './components/GameOverModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import {
-  ArrowLeft,
-  Volume2,
-  VolumeX,
-  RotateCcw,
-  RefreshCw,
-  Trophy,
-  Award,
+  Menu,
   Clock,
-  Settings,
-  X,
-  Palette,
-  BookOpen,
-  LogOut,
-  HelpCircle,
+  RotateCcw,
 } from 'lucide-react';
 import {
   initTelegramWebApp,
@@ -85,13 +75,13 @@ export default function App() {
   // Player Profile
   const [profile, setProfile] = useState<PlayerProfile>(loadPlayerProfile);
 
-  // Modals & In-Game Menu Drawer
+  // Modals & Side Flyout Menu
+  const [showSideMenu, setShowSideMenu] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showOnlineLobby, setShowOnlineLobby] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
-  const [showInGameMenu, setShowInGameMenu] = useState(false);
   const [isTelegram, setIsTelegram] = useState(false);
 
   // Timer reference for match duration
@@ -143,7 +133,9 @@ export default function App() {
   useMobileLifecycle({
     currentScreen,
     onNavigateBack: () => {
-      if (currentScreen === 'play') {
+      if (showSideMenu) {
+        setShowSideMenu(false);
+      } else if (currentScreen === 'play') {
         if (mode === 'online') {
           handleLeaveOnlineRoom();
         }
@@ -629,7 +621,6 @@ export default function App() {
     );
   }
 
-  // Current turn indicator values
   const isOpponentTurn = gameState.status === 'playing' && !isUserTurn();
 
   return (
@@ -637,146 +628,92 @@ export default function App() {
       className="fixed inset-0 w-full h-full h-[100dvh] max-h-[100dvh] bg-stone-950 text-stone-100 flex flex-col justify-between overflow-hidden select-none touch-none"
       style={{ height: '100dvh', maxHeight: '100dvh' }}
     >
-      {/* 1. Android Material Top App Bar */}
-      <header className="w-full max-w-lg mx-auto h-14 px-3 flex items-center justify-between shrink-0 bg-stone-950 border-b border-stone-850 z-10">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              if (mode === 'online') {
-                handleLeaveOnlineRoom();
-              }
-              setCurrentScreen('setup');
-            }}
-            className="w-10 h-10 rounded-full flex items-center justify-center text-stone-300 hover:text-white hover:bg-stone-900 active:bg-stone-800 transition"
-            title="Exit to Setup"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="text-sm font-bold text-stone-100 leading-tight">
-              {mode === 'ai' ? 'Match vs Computer' : mode === 'online' ? 'Online Match' : 'Pass & Play'}
-            </h1>
-            <span className="text-[10px] text-stone-400 font-medium">
-              {mode === 'ai' ? `Level: ${difficulty}` : 'Baghchal Arena'}
-            </span>
-          </div>
-        </div>
-
-        {/* Trailing: Sound Toggle & Options Drawer Button */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={handleToggleSound}
-            className="w-10 h-10 rounded-full flex items-center justify-center text-stone-300 hover:text-white hover:bg-stone-900 active:bg-stone-800 transition"
-            title="Audio Mute"
-          >
-            {isMuted ? <VolumeX className="w-4 h-4 text-stone-500" /> : <Volume2 className="w-4 h-4 text-amber-400" />}
-          </button>
-
-          <button
-            onClick={() => setShowInGameMenu(true)}
-            className="w-10 h-10 rounded-full flex items-center justify-center text-stone-300 hover:text-white hover:bg-stone-900 active:bg-stone-800 transition"
-            title="Game Options"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
-
-      {/* 2. THE UNIFIED TWO-PLAYER GAME ARENA */}
-      <section className="flex-1 flex flex-col justify-evenly items-center w-full max-w-lg mx-auto px-3 py-1 overflow-hidden">
-        {/* OPPONENT CARD (Directly above the board) */}
+      {/* 1. TOP APP BAR (ONLY 2 ESSENTIALS: Opponent Card + Side Flyout Menu Toggle) */}
+      <header className="w-full max-w-lg mx-auto h-16 px-3 flex items-center justify-between shrink-0 bg-stone-950/90 border-b border-stone-850 z-10 backdrop-blur-md">
+        {/* Opponent Identity & Live Status */}
         <div
-          className={`w-full max-w-[min(94vw,460px)] rounded-2xl bg-stone-900/90 border px-3 py-2 flex items-center justify-between shadow-sm transition ${
+          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-2xl border transition ${
             isOpponentTurn
-              ? 'border-amber-500/60 ring-1 ring-amber-500/40 bg-stone-900'
-              : 'border-stone-800/80'
+              ? 'bg-stone-900 border-amber-500/70 ring-1 ring-amber-500/40 shadow-sm'
+              : 'bg-stone-900/60 border-stone-800'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div
+            className={`w-8 h-8 rounded-xl flex items-center justify-center relative ${
+              opponentRole === 'tiger'
+                ? 'bg-amber-500 text-stone-950'
+                : 'bg-slate-200 text-stone-950'
+            }`}
+          >
+            {opponentRole === 'tiger' ? <TigerIcon className="w-4 h-4" /> : <GoatIcon className="w-4 h-4" />}
+            {isOpponentTurn && (
+              <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-stone-100 leading-tight">
+              {mode === 'ai'
+                ? `AI (${difficulty === 'adaptive' ? adaptiveDetailsLabel(profile) : difficulty})`
+                : mode === 'online' && roomInfo
+                ? roomInfo.opponentName
+                : opponentRole === 'tiger'
+                ? 'Tiger Player'
+                : 'Goat Player'}
+            </span>
+            <span className="text-[10px] text-stone-400 font-medium">
+              {opponentRole === 'tiger'
+                ? `Trapped: ${trappedInfo.trappedCount}/4`
+                : `Reserve: ${gameState.goatsInReserve}`}
+            </span>
+          </div>
+
+          {/* Clock if active */}
+          {timerMode !== 'unlimited' && gameState.status === 'playing' && (
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center relative ${
-                opponentRole === 'tiger'
-                  ? 'bg-amber-500 text-stone-950 font-bold'
-                  : 'bg-slate-200 text-stone-950 font-bold'
+              className={`ml-1 px-2 py-0.5 rounded-lg font-mono text-[11px] font-bold border ${
+                isOpponentTurn
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-stone-950 text-stone-500 border-stone-800'
               }`}
             >
-              {opponentRole === 'tiger' ? <TigerIcon className="w-5 h-5" /> : <GoatIcon className="w-5 h-5" />}
-              {isOpponentTurn && (
-                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
-                </span>
-              )}
+              {timerMode === 'turn30s'
+                ? `${isOpponentTurn ? turnSecondsLeft : 30}s`
+                : formatClock(blitzClocks[opponentRole])}
             </div>
-
-            <div>
-              <div className="text-xs font-bold text-stone-100 leading-tight">
-                {mode === 'ai'
-                  ? `AI Engine (${difficulty === 'adaptive' ? adaptiveDetailsLabel(profile) : difficulty})`
-                  : mode === 'online' && roomInfo
-                  ? roomInfo.opponentName
-                  : opponentRole === 'tiger'
-                  ? 'Tiger Commander'
-                  : 'Goat Herder'}
-              </div>
-              <div className="text-[11px] text-stone-400">
-                {opponentRole === 'tiger' ? '4 Tigers' : '20 Goats'}
-              </div>
-            </div>
-          </div>
-
-          {/* Opponent Tactical Counters & Clock */}
-          <div className="flex items-center gap-2">
-            {timerMode !== 'unlimited' && gameState.status === 'playing' && (
-              <div
-                className={`px-2 py-0.5 rounded-lg font-mono text-xs font-bold border ${
-                  isOpponentTurn
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                    : 'bg-stone-950 text-stone-500 border-stone-800'
-                }`}
-              >
-                {timerMode === 'turn30s'
-                  ? `${isOpponentTurn ? turnSecondsLeft : 30}s`
-                  : formatClock(blitzClocks[opponentRole])}
-              </div>
-            )}
-
-            {opponentRole === 'tiger' ? (
-              <div className="flex items-center gap-1 bg-stone-950 px-2 py-1 rounded-xl border border-stone-800">
-                <span className="text-[10px] text-stone-400 font-semibold uppercase">Trapped</span>
-                <span className="font-mono text-xs font-black text-amber-400">{trappedInfo.trappedCount}/4</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-stone-950 px-2 py-1 rounded-xl border border-stone-800 text-[11px] font-mono">
-                <span className="text-stone-300">Reserve: <strong className="text-amber-300">{gameState.goatsInReserve}</strong></span>
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
-        {/* BAGHCHAL BOARD SURFACE */}
-        <div className="w-full flex items-center justify-center my-1">
-          <BaghchalBoard
-            board={gameState.board}
-            turn={gameState.turn}
-            phase={gameState.phase}
-            goatsInReserve={gameState.goatsInReserve}
-            selectedPos={selectedPos}
-            validMoves={validMoves}
-            lastMove={gameState.lastMove}
-            isInteractive={isUserTurn()}
-            onNodeClick={handleNodeClick}
-            theme={boardTheme}
-          />
-        </div>
+        {/* SIDE FLYOUT MENU HAMBURGER BUTTON */}
+        <button
+          onClick={() => setShowSideMenu(true)}
+          className="w-11 h-11 rounded-2xl flex items-center justify-center text-stone-300 hover:text-white bg-stone-900 border border-stone-800 active:bg-stone-800 transition shadow-sm"
+          title="Open Menu"
+        >
+          <Menu className="w-5 h-5 text-amber-400" />
+        </button>
+      </header>
 
-        {/* INTEGRATED TACTICAL GUIDANCE RIBBON */}
-        <div className="w-full max-w-[min(94vw,460px)] px-3 py-1 rounded-xl bg-stone-900/60 border border-stone-800/80 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-1.5 font-medium text-stone-300 text-[11px]">
+      {/* 2. THE CLEAN GAME ARENA (Centered Board & Minimal Turn Beacon) */}
+      <section className="flex-1 flex flex-col justify-center items-center w-full max-w-lg mx-auto px-2 overflow-hidden relative">
+        {/* Subtle Turn Guidance Pill */}
+        <div className="mb-2">
+          <div
+            className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-sm transition ${
+              gameState.status !== 'playing'
+                ? 'bg-amber-500 border-amber-400 text-stone-950 font-black'
+                : isUserTurn()
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                : 'bg-stone-900 border-stone-800 text-stone-400'
+            }`}
+          >
             <span
-              className={`w-2 h-2 rounded-full ${
+              className={`w-1.5 h-1.5 rounded-full ${
                 gameState.status !== 'playing'
-                  ? 'bg-amber-400'
+                  ? 'bg-stone-950'
                   : isUserTurn()
                   ? 'bg-emerald-400 animate-pulse'
                   : 'bg-stone-600'
@@ -785,236 +722,132 @@ export default function App() {
             <span>
               {gameState.status !== 'playing'
                 ? gameState.status === 'goat_won'
-                  ? 'Match Concluded: Goats Trapped All Tigers!'
-                  : 'Match Concluded: Tigers Hunted 5 Goats!'
+                  ? 'Goats Won!'
+                  : 'Tigers Won!'
                 : isAiThinking
-                ? 'Computer is analyzing board positions...'
+                ? 'AI Calculating...'
                 : isUserTurn()
                 ? userRole === 'goat'
                   ? gameState.phase === 'placement'
-                    ? `Your Turn: Place Goat (${gameState.goatsInReserve} in reserve)`
-                    : 'Your Turn: Select and move goat along grid lines'
-                  : 'Your Turn: Select tiger to leap or move'
-                : 'Waiting for opponent move...'}
+                    ? `Place Goat (${gameState.goatsInReserve} left)`
+                    : 'Your Turn: Move Goat'
+                  : 'Your Turn: Move/Leap Tiger'
+                : 'Opponent Turn'}
+            </span>
+          </div>
+        </div>
+
+        {/* Baghchal 3D Board Surface */}
+        <BaghchalBoard
+          board={gameState.board}
+          turn={gameState.turn}
+          phase={gameState.phase}
+          goatsInReserve={gameState.goatsInReserve}
+          selectedPos={selectedPos}
+          validMoves={validMoves}
+          lastMove={gameState.lastMove}
+          isInteractive={isUserTurn()}
+          onNodeClick={handleNodeClick}
+          theme={boardTheme}
+        />
+      </section>
+
+      {/* 3. BOTTOM APP BAR (Player Card + Quick Undo Only) */}
+      <footer className="w-full max-w-lg mx-auto h-16 px-3 flex items-center justify-between shrink-0 bg-stone-950/90 border-t border-stone-850 z-10 backdrop-blur-md">
+        {/* Player Identity Card */}
+        <div
+          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-2xl border transition ${
+            isUserTurn()
+              ? 'bg-stone-900 border-emerald-500/70 ring-1 ring-emerald-500/40 shadow-sm'
+              : 'bg-stone-900/60 border-stone-800'
+          }`}
+        >
+          <div
+            className={`w-8 h-8 rounded-xl flex items-center justify-center relative ${
+              userRole === 'goat'
+                ? 'bg-slate-200 text-stone-950'
+                : 'bg-amber-500 text-stone-950'
+            }`}
+          >
+            {userRole === 'goat' ? <GoatIcon className="w-4 h-4" /> : <TigerIcon className="w-4 h-4" />}
+            {isUserTurn() && (
+              <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-stone-100 leading-tight">
+              {profile.name || 'You'} ({userRole === 'goat' ? 'Goat' : 'Tiger'})
+            </span>
+            <span className="text-[10px] text-stone-400 font-medium">
+              {userRole === 'goat'
+                ? `Lost: ${gameState.goatsCaptured}/5`
+                : `Trapped: ${trappedInfo.trappedCount}/4`}
             </span>
           </div>
 
-          <span className="text-[10px] text-stone-500 uppercase tracking-wider font-semibold">
-            {gameState.phase === 'placement' ? 'Placement' : 'Movement'}
-          </span>
-        </div>
-
-        {/* PLAYER CARD (Directly below the board) */}
-        <div
-          className={`w-full max-w-[min(94vw,460px)] rounded-2xl bg-stone-900/90 border px-3 py-2 flex items-center justify-between shadow-sm transition ${
-            isUserTurn()
-              ? 'border-emerald-500/60 ring-1 ring-emerald-500/40 bg-stone-900'
-              : 'border-stone-800/80'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
+          {/* User Turn Clock */}
+          {timerMode !== 'unlimited' && gameState.status === 'playing' && (
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center relative ${
-                userRole === 'goat'
-                  ? 'bg-slate-200 text-stone-950 font-bold'
-                  : 'bg-amber-500 text-stone-950 font-bold'
+              className={`ml-1 px-2 py-0.5 rounded-lg font-mono text-[11px] font-bold border ${
+                isUserTurn()
+                  ? turnSecondsLeft <= 5 && timerMode === 'turn30s'
+                    ? 'bg-red-950/80 text-red-300 border-red-500 animate-pulse'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-stone-950 text-stone-500 border-stone-800'
               }`}
             >
-              {userRole === 'goat' ? <GoatIcon className="w-5 h-5" /> : <TigerIcon className="w-5 h-5" />}
-              {isUserTurn() && (
-                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                </span>
-              )}
+              {timerMode === 'turn30s'
+                ? `${isUserTurn() ? turnSecondsLeft : 30}s`
+                : formatClock(blitzClocks[userRole])}
             </div>
-
-            <div>
-              <div className="text-xs font-bold text-stone-100 leading-tight">
-                {profile.name || 'You'} (Commander)
-              </div>
-              <div className="text-[11px] text-stone-400">
-                {userRole === 'goat' ? '20 Goats' : '4 Tigers'}
-              </div>
-            </div>
-          </div>
-
-          {/* User Tactical Counters & Clock */}
-          <div className="flex items-center gap-2">
-            {timerMode !== 'unlimited' && gameState.status === 'playing' && (
-              <div
-                className={`px-2 py-0.5 rounded-lg font-mono text-xs font-bold border ${
-                  isUserTurn()
-                    ? turnSecondsLeft <= 5 && timerMode === 'turn30s'
-                      ? 'bg-red-950/80 text-red-300 border-red-500 animate-pulse'
-                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-stone-950 text-stone-500 border-stone-800'
-                }`}
-              >
-                {timerMode === 'turn30s'
-                  ? `${isUserTurn() ? turnSecondsLeft : 30}s`
-                  : formatClock(blitzClocks[userRole])}
-              </div>
-            )}
-
-            {userRole === 'goat' ? (
-              <div className="flex items-center gap-2 bg-stone-950 px-2 py-1 rounded-xl border border-stone-800 text-[11px] font-mono">
-                <span className="text-stone-300">Reserve: <strong className="text-amber-300">{gameState.goatsInReserve}</strong></span>
-                <span className="text-stone-300">Eaten: <strong className="text-red-400">{gameState.goatsCaptured}/5</strong></span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 bg-stone-950 px-2 py-1 rounded-xl border border-stone-800">
-                <span className="text-[10px] text-stone-400 font-semibold uppercase">Trapped</span>
-                <span className="font-mono text-xs font-black text-amber-400">{trappedInfo.trappedCount}/4</span>
-              </div>
-            )}
-          </div>
+          )}
         </div>
-      </section>
 
-      {/* 3. CLEAN BOTTOM MATERIAL GAME ACTION BAR */}
-      <footer className="w-full max-w-lg mx-auto p-2 bg-stone-950 border-t border-stone-850 shrink-0">
-        <div className="w-full max-w-[min(94vw,460px)] mx-auto grid grid-cols-4 gap-1.5 bg-stone-900 border border-stone-800 p-1 rounded-2xl shadow-md">
-          {/* Action 1: Undo */}
-          <button
-            onClick={handleUndo}
-            disabled={historyStack.length === 0 || mode === 'online' || isAiThinking}
-            className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-semibold transition ${
-              historyStack.length === 0 || mode === 'online' || isAiThinking
-                ? 'text-stone-600 cursor-not-allowed'
-                : 'text-stone-300 hover:text-white hover:bg-stone-800 active:bg-stone-700'
-            }`}
-          >
-            <RotateCcw className="w-4 h-4 mb-0.5" />
-            <span className="text-[10px]">Undo</span>
-          </button>
-
-          {/* Action 2: Restart */}
-          <button
-            onClick={() => {
-              resetGame();
-              if (mode === 'online') sendRestart();
-            }}
-            className="flex flex-col items-center justify-center py-2 rounded-xl text-xs font-semibold text-stone-300 hover:text-white hover:bg-stone-800 active:bg-stone-700 transition"
-          >
-            <RefreshCw className="w-4 h-4 mb-0.5" />
-            <span className="text-[10px]">Restart</span>
-          </button>
-
-          {/* Action 3: Game Rules */}
-          <button
-            onClick={() => setShowRules(true)}
-            className="flex flex-col items-center justify-center py-2 rounded-xl text-xs font-semibold text-stone-300 hover:text-white hover:bg-stone-800 active:bg-stone-700 transition"
-          >
-            <HelpCircle className="w-4 h-4 mb-0.5" />
-            <span className="text-[10px]">Rules</span>
-          </button>
-
-          {/* Action 4: Leaderboard */}
-          <button
-            onClick={() => setShowLeaderboard(true)}
-            className="flex flex-col items-center justify-center py-2 rounded-xl text-xs font-semibold text-amber-400 hover:text-amber-300 hover:bg-stone-800 active:bg-stone-700 transition"
-          >
-            <Trophy className="w-4 h-4 mb-0.5" />
-            <span className="text-[10px]">Ranks</span>
-          </button>
-        </div>
+        {/* Quick Undo Floating Action Button (Only visible when moves can be undone) */}
+        <button
+          onClick={handleUndo}
+          disabled={historyStack.length === 0 || mode === 'online' || isAiThinking}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl border text-xs font-semibold transition ${
+            historyStack.length === 0 || mode === 'online' || isAiThinking
+              ? 'bg-stone-900/40 border-stone-900 text-stone-600 cursor-not-allowed opacity-50'
+              : 'bg-stone-900 border-stone-800 text-stone-200 hover:text-white hover:bg-stone-800 active:scale-95 shadow-sm'
+          }`}
+          title="Undo Last Move"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          <span>Undo</span>
+        </button>
       </footer>
 
-      {/* 4. IN-GAME MATERIAL OPTIONS BOTTOM SHEET / MODAL */}
-      {showInGameMenu && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-fade-in select-none">
-          <div className="w-full max-w-md bg-stone-900 border border-stone-800 rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-800">
-              <div className="flex items-center gap-2">
-                <Settings className="w-5 h-5 text-amber-400" />
-                <h2 className="text-base font-bold text-stone-100">Match Settings</h2>
-              </div>
-              <button
-                onClick={() => setShowInGameMenu(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-stone-400 hover:text-white hover:bg-stone-800 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* 4. SIDE FLYOUT MENU DRAWER */}
+      <SideDrawer
+        isOpen={showSideMenu}
+        onClose={() => setShowSideMenu(false)}
+        mode={mode}
+        canUndo={historyStack.length > 0 && mode !== 'online' && !isAiThinking}
+        onUndo={handleUndo}
+        onRestart={resetGame}
+        isMuted={isMuted}
+        onToggleSound={handleToggleSound}
+        boardTheme={boardTheme}
+        onSelectTheme={(t) => setBoardTheme(t)}
+        onOpenRules={() => setShowRules(true)}
+        onOpenLeaderboard={() => setShowLeaderboard(true)}
+        onOpenProfile={() => setShowProfile(true)}
+        onOpenOnlineLobby={() => setShowOnlineLobby(true)}
+        onExitToSetup={() => {
+          if (mode === 'online') {
+            handleLeaveOnlineRoom();
+          }
+          setCurrentScreen('setup');
+        }}
+      />
 
-            {/* Board Theme Picker */}
-            <div className="space-y-1.5">
-              <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
-                <Palette className="w-3.5 h-3.5 text-amber-400" />
-                <span>Board Theme</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'classic', label: 'Woodland', color: 'bg-amber-500' },
-                  { id: 'slate', label: 'Highland', color: 'bg-cyan-400' },
-                  { id: 'midnight', label: 'Obsidian', color: 'bg-purple-400' },
-                ].map(({ id, label, color }) => (
-                  <button
-                    key={id}
-                    onClick={() => setBoardTheme(id as BoardTheme)}
-                    className={`py-2 px-2 rounded-xl text-xs font-semibold border flex flex-col items-center gap-1 transition ${
-                      boardTheme === id
-                        ? 'bg-stone-850 border-amber-400 text-stone-100 ring-1 ring-amber-400/50'
-                        : 'bg-stone-950 border-stone-800 text-stone-400'
-                    }`}
-                  >
-                    <span className={`w-3 h-3 rounded-full ${color}`} />
-                    <span>{label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick Actions List */}
-            <div className="space-y-2 pt-1">
-              <button
-                onClick={() => {
-                  setShowInGameMenu(false);
-                  setShowRules(true);
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-stone-950 border border-stone-800 text-xs font-semibold text-stone-200 hover:bg-stone-850 transition"
-              >
-                <span className="flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-amber-400" />
-                  <span>How to Play Baghchal</span>
-                </span>
-                <span className="text-stone-500">View Rules</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowInGameMenu(false);
-                  setShowLeaderboard(true);
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-stone-950 border border-stone-800 text-xs font-semibold text-stone-200 hover:bg-stone-850 transition"
-              >
-                <span className="flex items-center gap-2">
-                  <Award className="w-4 h-4 text-amber-400" />
-                  <span>Global Leaderboard</span>
-                </span>
-                <span className="text-stone-500">Hall of Fame</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowInGameMenu(false);
-                  if (mode === 'online') {
-                    handleLeaveOnlineRoom();
-                  }
-                  setCurrentScreen('setup');
-                }}
-                className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-800/60 text-xs font-bold text-red-300 transition"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Exit Match to Menu</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modals */}
+      {/* Dialog Modals */}
       <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
       <LeaderboardModal
         isOpen={showLeaderboard}
