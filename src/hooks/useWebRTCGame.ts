@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Move, GameState, PlayerRole, OnlineRoomInfo } from '../types';
+import {
+  Move,
+  GameState,
+  PlayerRole,
+  OnlineRoomInfo,
+  RematchStatus,
+  ConnectionHealth,
+  SignalingTier,
+} from '../types';
 import { BaghchalLedger, LedgerBlock } from '../game/ledger';
+import { createInitialGameState } from '../game/rules';
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
@@ -10,33 +19,52 @@ const RTC_CONFIG: RTCConfiguration = {
   ],
 };
 
-const NTFY_BASE = 'https://ntfy.sh';
-const NTFY_WS_BASE = 'wss://ntfy.sh';
-const MATCHMAKING_TOPIC = 'baghchal_matchmaking_v2';
+// Configurable environment endpoints (no hardcoded secrets)
+const DO_URL = import.meta.env.VITE_DO_URL || '';
+const EMERGENCY_RELAY_URL = import.meta.env.VITE_EMERGENCY_RELAY_URL || 'https://ntfy.sh';
+const MATCHMAKING_TOPIC = import.meta.env.VITE_MATCHMAKING_TOPIC || 'baghchal_matchmaking_v2';
 
 interface UseWebRTCGameProps {
   playerName: string;
   gameState?: GameState;
   onRemoteMove: (move: Move, nextState: GameState, block?: LedgerBlock) => void;
-  onRemoteRestart: () => void;
-  onOpponentForfeitWin?: () => void;
+  onOpponentResigned?: () => void;
+  onOpponentLeft?: () => void;
+  onOpponentForfeitWin?: (reason: string) => void;
+  onLocalForfeitLoss?: (reason: string) => void;
+  onRematchRequested?: () => void;
+  onRematchAccepted?: (newRole: PlayerRole) => void;
+  onRematchDeclined?: () => void;
 }
 
 export function useWebRTCGame({
   playerName,
   gameState,
   onRemoteMove,
-  onRemoteRestart,
+  onOpponentResigned,
+  onOpponentLeft,
   onOpponentForfeitWin,
+  onLocalForfeitLoss,
+  onRematchRequested,
+  onRematchAccepted,
+  onRematchDeclined,
 }: UseWebRTCGameProps) {
   const [roomInfo, setRoomInfo] = useState<OnlineRoomInfo | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [matchStatusText, setMatchStatusText] = useState('Select a mode to play');
   const [dataChannelOpen, setDataChannelOpen] = useState(false);
+
+  // Signaling Hierarchy & Health
+  const [signalingTier, setSignalingTier] = useState<SignalingTier>('disconnected');
+  const [connectionHealth, setConnectionHealth] = useState<ConnectionHealth>('disconnected');
   const [isOpponentDisconnected, setIsOpponentDisconnected] = useState(false);
   const [disconnectSecondsLeft, setDisconnectSecondsLeft] = useState(30);
-  const [playerId] = useState(() => `p_${Math.random().toString(36).substring(2, 9)}`);
+  const [pingLatencyMs, setPingLatencyMs] = useState<number | null>(null);
 
+  // Rematch / Replay Status
+  const [rematchStatus, setRematchStatus] = useState<RematchStatus>('idle');
+
+  const [playerId] = useState(() => `p_${Math.random().toString(36).substring(2, 9)}`);
   const [ledgerChain, setLedgerChain] = useState<LedgerBlock[]>([]);
   const ledgerRef = useRef<BaghchalLedger>(new BaghchalLedger());
 
@@ -46,14 +74,30 @@ export function useWebRTCGame({
   const currentGameStateRef = useRef<GameState | undefined>(gameState);
   currentGameStateRef.current = gameState;
 
+  // WebRTC Peer References
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
-  const roomWsRef = useRef<WebSocket | null>(null);
-  const matchWsRef = useRef<WebSocket | null>(null);
+
+  // Tier 1: Durable Object WebSocket
+  const doWsRef = useRef<WebSocket | null>(null);
+
+  // Tier 2: Redis / KV Polling
+  const redisPollIntervalRef = useRef<number | null>(null);
+
+  // Tier 3: Emergency Relay WebSocket
+  const relayWsRef = useRef<WebSocket | null>(null);
+
+  // Matchmaking
   const matchSeekIntervalRef = useRef<number | null>(null);
   const matchTimeoutRef = useRef<number | null>(null);
-  const redisPollIntervalRef = useRef<number | null>(null);
+  const matchPollIntervalRef = useRef<number | null>(null);
+
+  // Heartbeat & Watchdogs
+  const heartbeatIntervalRef = useRef<number | null>(null);
   const forfeitCountdownRef = useRef<number | null>(null);
+  const lastHeartbeatReceivedRef = useRef<number>(Date.now());
+  const isOpponentDisconnectedRef = useRef(false);
+  isOpponentDisconnectedRef.current = isOpponentDisconnected;
 
   const currentRoomIdRef = useRef<string | null>(null);
   const roleRef = useRef<PlayerRole | null>(null);
@@ -65,34 +109,91 @@ export function useWebRTCGame({
     return `baghchal_rm_${clean}`;
   };
 
-  const publishToTopic = async (topic: string, data: any) => {
+  /**
+   * Tiered Dispatch: Sends signaling or fallback messages
+   * Tier 1: Durable Object WS -> Tier 2: Redis/KV API -> Tier 3: Emergency Relay
+   */
+  const sendTieredSignal = async (payload: any) => {
+    const roomId = currentRoomIdRef.current;
+    if (!roomId) return;
+    const sender = isInitiatorRef.current ? 'host' : 'guest';
+
+    // 1. Try Tier 1: Durable Object WebSocket
+    if (doWsRef.current && doWsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        doWsRef.current.send(
+          JSON.stringify({
+            ...payload,
+            roomId,
+            sender,
+          })
+        );
+        return;
+      } catch (e) {}
+    }
+
+    // 2. Try Tier 2: Redis / KV API
     try {
-      fetch(`${NTFY_BASE}/${topic}`, {
+      const res = await fetch('/api/signaling/redis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).catch(() => {});
+        body: JSON.stringify({
+          roomId,
+          action: 'publish',
+          sender,
+          payload,
+        }),
+      });
+      if (res.ok) return;
     } catch (e) {}
 
-    if (currentRoomIdRef.current) {
+    // Also attempt KV store endpoint if available
+    try {
+      await fetch(`/api/kv/${roomId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender,
+          payload,
+        }),
+      });
+    } catch (e) {}
+
+    // 3. Fallback Tier 3: Emergency Relay
+    try {
+      const topic = getCleanTopic(roomId);
+      fetch(`${EMERGENCY_RELAY_URL}/${topic}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    } catch (e) {}
+  };
+
+  /**
+   * Unified Game Message Dispatch:
+   * Direct WebRTC DataChannel (Primary <10ms) with Tiered Signaling as failover
+   */
+  const sendPayload = (payload: any) => {
+    let sentP2P = false;
+    if (dcRef.current && dcRef.current.readyState === 'open') {
       try {
-        fetch('/api/signaling/redis', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            roomId: currentRoomIdRef.current,
-            action: 'publish',
-            sender: isInitiatorRef.current ? 'host' : 'guest',
-            payload: data,
-          }),
-        }).catch(() => {});
-      } catch (e) {}
+        dcRef.current.send(JSON.stringify(payload));
+        sentP2P = true;
+      } catch (err) {}
+    }
+
+    // Mirror over signaling if P2P is not yet open or for critical game events
+    if (!sentP2P || payload.type !== 'heartbeat_ping') {
+      sendTieredSignal(payload);
     }
   };
 
+  // 30-Second Forfeit Watchdog
   const startForfeitCountdown = useCallback(() => {
     if (forfeitCountdownRef.current) return;
     setIsOpponentDisconnected(true);
+    setConnectionHealth(navigator.onLine ? 'opponent_offline' : 'local_offline');
     setDisconnectSecondsLeft(30);
 
     forfeitCountdownRef.current = window.setInterval(() => {
@@ -103,26 +204,79 @@ export function useWebRTCGame({
             forfeitCountdownRef.current = null;
           }
           setIsOpponentDisconnected(false);
-          setMatchStatusText('Opponent forfeited after 30s disconnection. You win!');
-          onOpponentForfeitWin?.();
+
+          if (navigator.onLine) {
+            setConnectionHealth('disconnected');
+            setMatchStatusText('Opponent forfeited after 30s disconnection. You win!');
+            onOpponentForfeitWin?.('opponent_timeout');
+          } else {
+            setConnectionHealth('local_offline');
+            setMatchStatusText('You were disconnected from the match for over 30s.');
+            onLocalForfeitLoss?.('local_timeout');
+          }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-  }, [onOpponentForfeitWin]);
+  }, [onOpponentForfeitWin, onLocalForfeitLoss]);
 
   const cancelForfeitCountdown = useCallback(() => {
     setIsOpponentDisconnected(false);
     setDisconnectSecondsLeft(30);
+    setConnectionHealth('connected');
     if (forfeitCountdownRef.current) {
       clearInterval(forfeitCountdownRef.current);
       forfeitCountdownRef.current = null;
     }
   }, []);
 
+  // Heartbeat Watchdog
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+    lastHeartbeatReceivedRef.current = Date.now();
+
+    heartbeatIntervalRef.current = window.setInterval(() => {
+      if (!currentRoomIdRef.current) return;
+
+      sendPayload({
+        type: 'heartbeat_ping',
+        sender: isInitiatorRef.current ? 'host' : 'guest',
+        timestamp: Date.now(),
+      });
+
+      const elapsed = Date.now() - lastHeartbeatReceivedRef.current;
+      if (elapsed > 4500) {
+        if (!navigator.onLine) {
+          setConnectionHealth('local_offline');
+          setMatchStatusText('You are offline. Checking your internet connection...');
+        } else {
+          setConnectionHealth('opponent_offline');
+          setMatchStatusText('Opponent connection lost. Waiting for opponent...');
+          if (!isOpponentDisconnectedRef.current) {
+            startForfeitCountdown();
+          }
+        }
+      } else {
+        if (isOpponentDisconnectedRef.current) {
+          cancelForfeitCountdown();
+          setMatchStatusText('Direct P2P WebRTC Connected (<10ms)!');
+        }
+      }
+    }, 2000);
+  }, [startForfeitCountdown, cancelForfeitCountdown]);
+
+  const stopHeartbeat = () => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  };
+
   const cleanupConnection = () => {
     cancelForfeitCountdown();
+    stopHeartbeat();
+
     if (matchSeekIntervalRef.current) {
       clearInterval(matchSeekIntervalRef.current);
       matchSeekIntervalRef.current = null;
@@ -131,21 +285,25 @@ export function useWebRTCGame({
       clearTimeout(matchTimeoutRef.current);
       matchTimeoutRef.current = null;
     }
+    if (matchPollIntervalRef.current) {
+      clearInterval(matchPollIntervalRef.current);
+      matchPollIntervalRef.current = null;
+    }
     if (redisPollIntervalRef.current) {
       clearInterval(redisPollIntervalRef.current);
       redisPollIntervalRef.current = null;
     }
-    if (matchWsRef.current) {
+    if (doWsRef.current) {
       try {
-        matchWsRef.current.close();
+        doWsRef.current.close();
       } catch (e) {}
-      matchWsRef.current = null;
+      doWsRef.current = null;
     }
-    if (roomWsRef.current) {
+    if (relayWsRef.current) {
       try {
-        roomWsRef.current.close();
+        relayWsRef.current.close();
       } catch (e) {}
-      roomWsRef.current = null;
+      relayWsRef.current = null;
     }
     if (dcRef.current) {
       try {
@@ -161,8 +319,11 @@ export function useWebRTCGame({
     }
 
     setDataChannelOpen(false);
+    setConnectionHealth('disconnected');
+    setSignalingTier('disconnected');
     setRoomInfo(null);
     setIsSearching(false);
+    setRematchStatus('idle');
     currentRoomIdRef.current = null;
     roleRef.current = null;
     localOfferRef.current = null;
@@ -172,125 +333,282 @@ export function useWebRTCGame({
     return () => cleanupConnection();
   }, []);
 
-  const startAutoMatch = async (preferredRole: 'any' | 'tiger' | 'goat' = 'any') => {
-    cleanupConnection();
-    setIsSearching(true);
-    setMatchStatusText('Connecting to matchmaking lobby...');
+  // Online / Offline window listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      if (currentRoomIdRef.current) attemptManualReconnect();
+    };
+    const handleOffline = () => {
+      setConnectionHealth('local_offline');
+      setMatchStatusText('You are offline. Check network connection.');
+    };
 
-    try {
-      const ws = new WebSocket(`${NTFY_WS_BASE}/${MATCHMAKING_TOPIC}/ws`);
-      matchWsRef.current = ws;
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
-      const myJoinTime = Date.now();
+  /**
+   * Cryptographic & Signaling Inbound Processor:
+   * Every game move is received as a cryptographic LedgerBlock and deterministically projected.
+   */
+  const handleIncomingMessage = async (msg: any) => {
+    if (!msg) return;
+    const pcInstance = pcRef.current;
+    const mySenderRole = isInitiatorRef.current ? 'host' : 'guest';
+    const expectedSender = isInitiatorRef.current ? 'guest' : 'host';
 
-      ws.onopen = () => {
-        setMatchStatusText('Searching for an opponent...');
+    // Ignore self-echoes from broadcast signaling
+    if (msg.sender === mySenderRole) return;
 
-        const seekPacket = {
-          type: 'seek',
-          playerId,
+    // --- HEARTBEAT PING / PONG ---
+    if (msg.type === 'heartbeat_ping') {
+      lastHeartbeatReceivedRef.current = Date.now();
+      cancelForfeitCountdown();
+      sendPayload({
+        type: 'heartbeat_pong',
+        sender: mySenderRole,
+        timestamp: msg.timestamp,
+      });
+      return;
+    }
+
+    if (msg.type === 'heartbeat_pong') {
+      lastHeartbeatReceivedRef.current = Date.now();
+      cancelForfeitCountdown();
+      if (msg.timestamp) {
+        const latency = Math.max(1, Math.round((Date.now() - msg.timestamp) / 2));
+        setPingLatencyMs(latency);
+      }
+      return;
+    }
+
+    // --- SIGNALING MESSAGES ---
+    if (msg.type === 'guest_joined' && isInitiatorRef.current) {
+      setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
+      setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
+      if (localOfferRef.current) {
+        sendTieredSignal({
+          type: 'offer',
+          sender: 'host',
           playerName: playerNameRef.current,
-          preferredRole,
-          timestamp: myJoinTime,
-        };
-        publishToTopic(MATCHMAKING_TOPIC, seekPacket);
+          offer: localOfferRef.current,
+        });
+      }
+      return;
+    }
 
-        matchSeekIntervalRef.current = window.setInterval(() => {
-          publishToTopic(MATCHMAKING_TOPIC, seekPacket);
-        }, 2500);
-
-        matchTimeoutRef.current = window.setTimeout(() => {
-          if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
-          setIsSearching(false);
-          setMatchStatusText('No opponent found right now. Try creating a private room!');
-        }, 45000);
-      };
-
-      ws.onmessage = (event) => {
+    if ((msg.type === 'room_ready' || msg.type === 'offer') && !isInitiatorRef.current && msg.offer && pcInstance) {
+      setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
+      setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
+      if (pcInstance.signalingState !== 'stable') {
         try {
-          const envelope = JSON.parse(event.data);
-          if (envelope.event !== 'message') return;
-          const msg = JSON.parse(envelope.message);
-
-          if (msg.type === 'seek' && msg.playerId !== playerId) {
-            if (myJoinTime > msg.timestamp || (myJoinTime === msg.timestamp && playerId > msg.playerId)) {
-              const code = Math.random().toString(36).substring(2, 7).toUpperCase();
-              const roomId = `bc_${code}`;
-
-              let roleForSeeker: PlayerRole;
-              let roleForMe: PlayerRole;
-
-              if (msg.preferredRole === 'tiger' || preferredRole === 'goat') {
-                roleForSeeker = 'tiger';
-                roleForMe = 'goat';
-              } else if (msg.preferredRole === 'goat' || preferredRole === 'tiger') {
-                roleForSeeker = 'goat';
-                roleForMe = 'tiger';
-              } else {
-                roleForSeeker = 'goat';
-                roleForMe = 'tiger';
-              }
-
-              publishToTopic(MATCHMAKING_TOPIC, {
-                type: 'match_found',
-                seekerId: msg.playerId,
-                proposerId: playerId,
-                roomId,
-                roleSeeker: roleForSeeker,
-                roleProposer: roleForMe,
-                nameSeeker: msg.playerName,
-                nameProposer: playerNameRef.current,
-              });
-
-              if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
-              if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
-              if (matchWsRef.current) matchWsRef.current.close();
-              matchWsRef.current = null;
-
-              setupRoom(roomId, roleForMe, msg.playerName, roleForMe === 'goat', true);
-            }
-          }
-
-          if (msg.type === 'match_found' && msg.seekerId === playerId) {
-            if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
-            if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
-            if (matchWsRef.current) matchWsRef.current.close();
-            matchWsRef.current = null;
-
-            setupRoom(
-              msg.roomId,
-              msg.roleSeeker,
-              msg.nameProposer,
-              msg.roleSeeker === 'goat',
-              true
-            );
-          }
+          await pcInstance.setRemoteDescription(new RTCSessionDescription(msg.offer));
+          const answer = await pcInstance.createAnswer();
+          await pcInstance.setLocalDescription(answer);
+          sendTieredSignal({
+            type: 'answer',
+            sender: 'guest',
+            playerName: playerNameRef.current,
+            answer,
+          });
         } catch (e) {}
-      };
+      }
+      return;
+    }
 
-      ws.onerror = () => {
-        setMatchStatusText('Connection error. You can still create a private room.');
-      };
-    } catch (err) {
-      setIsSearching(false);
-      setMatchStatusText('Failed to connect to matchmaking. Try a private room.');
+    if (msg.type === 'answer' && isInitiatorRef.current && msg.answer && pcInstance) {
+      setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName || prev.opponentName, connected: true } : null));
+      if (pcInstance.signalingState === 'have-local-offer') {
+        try {
+          await pcInstance.setRemoteDescription(new RTCSessionDescription(msg.answer));
+        } catch (e) {}
+      }
+      return;
+    }
+
+    if (msg.type === 'candidate' && msg.candidate && pcInstance) {
+      if (msg.sender === expectedSender && pcInstance.remoteDescription) {
+        try {
+          await pcInstance.addIceCandidate(new RTCIceCandidate(msg.candidate));
+        } catch (e) {}
+      }
+      return;
+    }
+
+    // --- PURE CRYPTOGRAPHIC BLOCK EXCHANGE (Blockchain Single Source of Truth) ---
+    if (msg.type === 'crypto_block' || msg.type === 'ledger_block') {
+      lastHeartbeatReceivedRef.current = Date.now();
+      cancelForfeitCountdown();
+
+      const block: LedgerBlock = msg.block;
+      if (!block) return;
+
+      // 1. Verify Cryptographic Integrity
+      const isValidChain = await ledgerRef.current.verifyAndAppendBlock(block);
+      if (!isValidChain) {
+        // Delta gap: auto-reconstruct chain from history if available
+        if (msg.history && Array.isArray(msg.history)) {
+          const reconstructed = await BaghchalLedger.reconstructChainFromHistory(msg.history);
+          ledgerRef.current = reconstructed;
+          setLedgerChain([...reconstructed.chain]);
+        } else {
+          // Request missing blocks delta sync
+          sendPayload({
+            type: 'sync_ledger_req',
+            sender: mySenderRole,
+            fromIndex: ledgerRef.current.chain.length,
+          });
+          return;
+        }
+      } else {
+        setLedgerChain([...ledgerRef.current.chain]);
+      }
+
+      // 2. Rule & Tamper Verification Against Board
+      const currentState = currentGameStateRef.current || createInitialGameState();
+      const isLegal = BaghchalLedger.verifyBlockMoveLegal(block, currentState);
+
+      if (!isLegal) {
+        console.warn('Rejected illegal/tampered block move from peer', block);
+        return;
+      }
+
+      // 3. Deterministically Map & Project Next State from Cryptographic Block
+      const nextState = BaghchalLedger.applyBlockToState(currentState, block);
+      const move = BaghchalLedger.blockToMove(block);
+
+      onRemoteMove(move, nextState, block);
+      return;
+    }
+
+    // --- RESIGNATION & FORFEIT ---
+    if (msg.type === 'resign') {
+      onOpponentResigned?.();
+      return;
+    }
+
+    if (msg.type === 'player_left') {
+      onOpponentLeft?.();
+      return;
+    }
+
+    // --- MUTUAL REMATCH HANDSHAKE ---
+    if (msg.type === 'rematch_request') {
+      setRematchStatus((prev) => {
+        if (prev === 'requested_by_me') {
+          // Both requested rematch simultaneously! Accept immediately!
+          sendPayload({ type: 'rematch_accept', sender: mySenderRole });
+          handleRematchStart();
+          return 'accepted';
+        }
+        onRematchRequested?.();
+        return 'requested_by_opponent';
+      });
+      return;
+    }
+
+    if (msg.type === 'rematch_accept') {
+      handleRematchStart();
+      return;
+    }
+
+    if (msg.type === 'rematch_declined') {
+      setRematchStatus('idle');
+      onRematchDeclined?.();
+      return;
+    }
+
+    // --- DELTA SYNC ---
+    if (msg.type === 'sync_ledger_req') {
+      const missingBlocks = ledgerRef.current.getBlocksFrom(msg.fromIndex || 0);
+      sendPayload({
+        type: 'sync_ledger_res',
+        sender: mySenderRole,
+        blocks: missingBlocks,
+      });
+      return;
+    }
+
+    if (msg.type === 'sync_ledger_res') {
+      if (Array.isArray(msg.blocks)) {
+        for (const b of msg.blocks) {
+          await ledgerRef.current.verifyAndAppendBlock(b);
+        }
+        setLedgerChain([...ledgerRef.current.chain]);
+
+        // Reconstruct game state from full verified ledger
+        const moves = ledgerRef.current.chain.map((b) => BaghchalLedger.blockToMove(b));
+        let replayState = createInitialGameState();
+        for (const m of moves) {
+          replayState = BaghchalLedger.applyBlockToState(replayState, ledgerRef.current.chain[replayState.moveHistory.length]);
+        }
+        if (moves.length > 0) {
+          onRemoteMove(moves[moves.length - 1], replayState, ledgerRef.current.chain[moves.length - 1]);
+        }
+      }
+      return;
     }
   };
 
-  const cancelAutoMatch = () => {
-    cleanupConnection();
-    setMatchStatusText('Search cancelled.');
+  const handleRematchStart = () => {
+    ledgerRef.current.reset();
+    setLedgerChain([]);
+    setRematchStatus('idle');
+
+    // Swap roles for fair Baghchal play
+    const oldRole = roleRef.current || 'goat';
+    const newRole: PlayerRole = oldRole === 'goat' ? 'tiger' : 'goat';
+    roleRef.current = newRole;
+
+    setRoomInfo((prev) => (prev ? { ...prev, myRole: newRole } : null));
+    onRematchAccepted?.(newRole);
   };
 
-  const joinCustomRoom = async (roomId: string, asHost: boolean) => {
-    cleanupConnection();
-    setIsSearching(false);
-    setMatchStatusText(asHost ? 'Creating private room...' : 'Joining room...');
+  const attachDataChannel = (dc: RTCDataChannel) => {
+    dcRef.current = dc;
 
-    const role: PlayerRole = asHost ? 'goat' : 'tiger';
-    setupRoom(roomId, role, asHost ? 'Waiting for Friend...' : 'Room Host', asHost, !asHost);
+    dc.onopen = () => {
+      setDataChannelOpen(true);
+      cancelForfeitCountdown();
+      setConnectionHealth('connected');
+      setRoomInfo((prev) => (prev ? { ...prev, connected: true, usingP2P: true } : null));
+      setMatchStatusText('Direct P2P WebRTC Connected (<10ms)!');
+      startHeartbeat();
+
+      try {
+        dc.send(
+          JSON.stringify({
+            type: 'sync_ledger_req',
+            sender: isInitiatorRef.current ? 'host' : 'guest',
+            fromIndex: ledgerRef.current.chain.length,
+          })
+        );
+      } catch (e) {}
+    };
+
+    dc.onclose = () => {
+      setDataChannelOpen(false);
+      startForfeitCountdown();
+      setRoomInfo((prev) => (prev ? { ...prev, usingP2P: false } : null));
+    };
+
+    dc.onmessage = async (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        handleIncomingMessage(payload);
+      } catch (err) {
+        console.error('DataChannel parse error:', err);
+      }
+    };
   };
 
+  /**
+   * Initializes room signaling across Tier 1 (Durable Object), Tier 2 (Redis/KV), and Tier 3 (Relay)
+   */
   const setupRoom = async (
     roomId: string,
     role: PlayerRole,
@@ -312,43 +630,59 @@ export function useWebRTCGame({
       usingP2P: false,
     });
 
-    if (isInitiallyConnected) {
-      setMatchStatusText(`Connected to ${opponentName}! Initializing game...`);
-    } else {
-      setMatchStatusText('Waiting for friend to join with room code...');
+    setConnectionHealth(isInitiallyConnected ? 'connected' : 'reconnecting');
+    setMatchStatusText(
+      isInitiallyConnected
+        ? `Connected to ${opponentName}! Initializing game...`
+        : 'Waiting for friend to join with room code...'
+    );
+
+    // -------------------------------------------------------------------------
+    // Tier 1: Primary Signaling via Cloudflare Durable Object WebSocket
+    // -------------------------------------------------------------------------
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = DO_URL ? DO_URL.replace(/^https?:\/\//, '') : window.location.host;
+    const doWsUrl = `${protocol}//${host}/api/room/${roomId}?playerId=${playerId}&name=${encodeURIComponent(
+      playerNameRef.current
+    )}&role=${role}`;
+
+    let doConnected = false;
+    try {
+      const doWs = new WebSocket(doWsUrl);
+      doWsRef.current = doWs;
+
+      doWs.onopen = () => {
+        doConnected = true;
+        setSignalingTier('durable_object');
+      };
+
+      doWs.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleIncomingMessage(data);
+        } catch (e) {}
+      };
+
+      doWs.onerror = () => {
+        // Fallback to Tier 2 if DO encounters an error or reaches daily limits
+        if (!doConnected) initFallbackSignaling(roomId, isInitiator);
+      };
+
+      doWs.onclose = () => {
+        if (!doConnected) initFallbackSignaling(roomId, isInitiator);
+      };
+    } catch (err) {
+      initFallbackSignaling(roomId, isInitiator);
     }
 
-    const roomTopic = getCleanTopic(roomId);
-    const ws = new WebSocket(`${NTFY_WS_BASE}/${roomTopic}/ws`);
-    roomWsRef.current = ws;
-
-    redisPollIntervalRef.current = window.setInterval(async () => {
-      if (dcRef.current && dcRef.current.readyState === 'open') return;
-      try {
-        const res = await fetch('/api/signaling/redis', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            roomId,
-            action: 'poll',
-            sender: isInitiator ? 'host' : 'guest',
-          }),
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        for (const msgItem of data.messages || []) {
-          handleIncomingSignal(msgItem.payload);
-        }
-      } catch (e) {}
-    }, 2500);
-
+    // Initialize WebRTC Peer Connection
     try {
       const pc = new RTCPeerConnection(RTC_CONFIG);
       pcRef.current = pc;
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          publishToTopic(roomTopic, {
+          sendTieredSignal({
             type: 'candidate',
             sender: isInitiator ? 'host' : 'guest',
             candidate: event.candidate,
@@ -360,8 +694,10 @@ export function useWebRTCGame({
         if (pc.connectionState === 'connected') {
           setDataChannelOpen(true);
           cancelForfeitCountdown();
+          setConnectionHealth('connected');
           setRoomInfo((prev) => (prev ? { ...prev, connected: true, usingP2P: true } : null));
           setMatchStatusText('Direct P2P WebRTC Connected (<10ms)!');
+          startHeartbeat();
         } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
           setDataChannelOpen(false);
           startForfeitCountdown();
@@ -377,225 +713,322 @@ export function useWebRTCGame({
         await pc.setLocalDescription(offer);
         localOfferRef.current = offer;
 
-        ws.onopen = () => {
-          publishToTopic(roomTopic, {
-            type: 'room_ready',
-            sender: 'host',
-            playerName: playerNameRef.current,
-            offer,
-          });
-        };
+        // Broadcast offer across active signaling tier
+        sendTieredSignal({
+          type: 'room_ready',
+          sender: 'host',
+          playerName: playerNameRef.current,
+          offer,
+        });
       } else {
         pc.ondatachannel = (e) => {
           attachDataChannel(e.channel);
         };
 
-        ws.onopen = () => {
-          publishToTopic(roomTopic, {
-            type: 'guest_joined',
-            sender: 'guest',
-            playerName: playerNameRef.current,
-          });
-        };
+        sendTieredSignal({
+          type: 'guest_joined',
+          sender: 'guest',
+          playerName: playerNameRef.current,
+        });
       }
-
-      const handleIncomingSignal = async (msg: any) => {
-        if (!msg || !pcRef.current) return;
-        const pcInstance = pcRef.current;
-
-        if (msg.type === 'guest_joined' && isInitiator) {
-          setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
-          setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
-          if (localOfferRef.current) {
-            publishToTopic(roomTopic, {
-              type: 'offer',
-              sender: 'host',
-              playerName: playerNameRef.current,
-              offer: localOfferRef.current,
-            });
-          }
-        }
-
-        if ((msg.type === 'room_ready' || msg.type === 'offer') && !isInitiator && msg.offer) {
-          setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName, connected: true } : null));
-          setMatchStatusText(`Connected to ${msg.playerName}! Starting match.`);
-          if (pcInstance.signalingState !== 'stable') {
-            await pcInstance.setRemoteDescription(new RTCSessionDescription(msg.offer));
-            const answer = await pcInstance.createAnswer();
-            await pcInstance.setLocalDescription(answer);
-            publishToTopic(roomTopic, {
-              type: 'answer',
-              sender: 'guest',
-              playerName: playerNameRef.current,
-              answer,
-            });
-          }
-        }
-
-        if (msg.type === 'answer' && isInitiator && msg.answer) {
-          setRoomInfo((prev) => (prev ? { ...prev, opponentName: msg.playerName || prev.opponentName, connected: true } : null));
-          if (pcInstance.signalingState === 'have-local-offer') {
-            await pcInstance.setRemoteDescription(new RTCSessionDescription(msg.answer));
-          }
-        }
-
-        if (msg.type === 'candidate' && msg.candidate) {
-          const expectedSender = isInitiator ? 'guest' : 'host';
-          if (msg.sender === expectedSender && pcInstance.remoteDescription) {
-            try {
-              await pcInstance.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            } catch (e) {}
-          }
-        }
-
-        if (msg.type === 'ledger_block') {
-          const expectedSender = isInitiator ? 'guest' : 'host';
-          if (msg.sender === expectedSender) {
-            if (msg.block) {
-              const valid = await ledgerRef.current.verifyAndAppendBlock(msg.block);
-              if (valid) {
-                setLedgerChain([...ledgerRef.current.chain]);
-              }
-            }
-            onRemoteMove(msg.move, msg.state, msg.block);
-          }
-        }
-
-        if (msg.type === 'restart') {
-          const expectedSender = isInitiator ? 'guest' : 'host';
-          if (msg.sender === expectedSender) {
-            ledgerRef.current.reset();
-            setLedgerChain([]);
-            onRemoteRestart();
-          }
-        }
-      };
-
-      ws.onmessage = async (event) => {
-        try {
-          const envelope = JSON.parse(event.data);
-          if (envelope.event !== 'message') return;
-          const msg = JSON.parse(envelope.message);
-          handleIncomingSignal(msg);
-        } catch (e) {}
-      };
     } catch (err) {
       console.error('PeerConnection setup error:', err);
     }
   };
 
-  const attachDataChannel = (dc: RTCDataChannel) => {
-    dcRef.current = dc;
+  /**
+   * Tier 2 & Tier 3 Fallback Signaling: Redis / KV and Emergency Relay
+   */
+  const initFallbackSignaling = (roomId: string, isInitiator: boolean) => {
+    setSignalingTier('redis_kv');
 
-    dc.onopen = () => {
-      setDataChannelOpen(true);
-      cancelForfeitCountdown();
-      setRoomInfo((prev) => (prev ? { ...prev, connected: true, usingP2P: true } : null));
-      setMatchStatusText('Direct P2P WebRTC Connected (<10ms)!');
-
+    // Tier 2: Redis / KV Polling
+    redisPollIntervalRef.current = window.setInterval(async () => {
+      if (dcRef.current && dcRef.current.readyState === 'open') return;
       try {
-        dc.send(
-          JSON.stringify({
-            type: 'sync_ledger_req',
-            fromIndex: ledgerRef.current.chain.length,
-          })
-        );
+        const res = await fetch('/api/signaling/redis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomId,
+            action: 'poll',
+            sender: isInitiator ? 'host' : 'guest',
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          for (const msgItem of data.messages || []) {
+            handleIncomingMessage(msgItem.payload);
+          }
+          return;
+        }
       } catch (e) {}
-    };
 
-    dc.onclose = () => {
-      setDataChannelOpen(false);
-      startForfeitCountdown();
-      setRoomInfo((prev) => (prev ? { ...prev, usingP2P: false } : null));
-    };
-
-    dc.onmessage = async (event) => {
+      // Try KV endpoint
       try {
-        const payload = JSON.parse(event.data);
-
-        if (payload.type === 'ledger_block') {
-          if (payload.block) {
-            const valid = await ledgerRef.current.verifyAndAppendBlock(payload.block);
-            if (valid) {
-              setLedgerChain([...ledgerRef.current.chain]);
-            }
-          }
-          onRemoteMove(payload.move, payload.state, payload.block);
-        } else if (payload.type === 'restart') {
-          ledgerRef.current.reset();
-          setLedgerChain([]);
-          onRemoteRestart();
-        } else if (payload.type === 'sync_ledger_req') {
-          const missingBlocks = ledgerRef.current.getBlocksFrom(payload.fromIndex || 0);
-          dc.send(
-            JSON.stringify({
-              type: 'sync_ledger_res',
-              blocks: missingBlocks,
-              fullState: currentGameStateRef.current,
-            })
-          );
-        } else if (payload.type === 'sync_ledger_res') {
-          if (Array.isArray(payload.blocks)) {
-            for (const b of payload.blocks) {
-              await ledgerRef.current.verifyAndAppendBlock(b);
-            }
-            setLedgerChain([...ledgerRef.current.chain]);
-          }
-          if (payload.fullState && payload.blocks?.length > 0) {
-            const lastMove = payload.fullState.moveHistory?.[payload.fullState.moveHistory.length - 1];
-            onRemoteMove(lastMove, payload.fullState);
+        const kvRes = await fetch(`/api/kv/${roomId}`);
+        if (kvRes.ok) {
+          const kvData = await kvRes.json();
+          if (kvData && !kvData.notFound) {
+            handleIncomingMessage(kvData.payload);
           }
         }
-      } catch (err) {
-        console.error('DataChannel parse error:', err);
+      } catch (e) {}
+    }, 2500);
+
+    // Tier 3: Emergency Relay WebSocket (Last Resort)
+    try {
+      const topic = getCleanTopic(roomId);
+      const wsUrl = `${EMERGENCY_RELAY_URL.replace('https://', 'wss://').replace('http://', 'ws://')}/${topic}/ws`;
+      const relayWs = new WebSocket(wsUrl);
+      relayWsRef.current = relayWs;
+
+      relayWs.onopen = () => {
+        setSignalingTier('emergency_relay');
+      };
+
+      relayWs.onmessage = (event) => {
+        try {
+          const envelope = JSON.parse(event.data);
+          if (envelope.event !== 'message') return;
+          const msg = JSON.parse(envelope.message);
+          handleIncomingMessage(msg);
+        } catch (e) {}
+      };
+    } catch (e) {}
+  };
+
+  /**
+   * Matchmaking: Primary via `/api/matchmaking/join` (KV/Server), fallback to PubSub
+   */
+  const startAutoMatch = async (preferredRole: 'any' | 'tiger' | 'goat' = 'any') => {
+    cleanupConnection();
+    setIsSearching(true);
+    setMatchStatusText('Searching for opponent...');
+
+    // 1. Try Primary Server Matchmaking Endpoint
+    try {
+      const res = await fetch('/api/matchmaking/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerId,
+          playerName: playerNameRef.current,
+          preferredRole,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'matched') {
+          setupRoom(data.roomId, data.role, data.opponentName, data.isInitiator, true);
+          return;
+        }
+
+        if (data.status === 'waiting' && data.queueId) {
+          const queueId = data.queueId;
+          matchPollIntervalRef.current = window.setInterval(async () => {
+            try {
+              const statusRes = await fetch(`/api/matchmaking/status/${queueId}`);
+              if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                if (statusData.status === 'matched') {
+                  if (matchPollIntervalRef.current) clearInterval(matchPollIntervalRef.current);
+                  setupRoom(
+                    statusData.roomId,
+                    statusData.role,
+                    statusData.opponentName,
+                    statusData.isInitiator,
+                    true
+                  );
+                }
+              }
+            } catch (e) {}
+          }, 2000);
+          return;
+        }
       }
-    };
+    } catch (e) {}
+
+    // 2. Fallback PubSub Matchmaking if server route unavailable
+    try {
+      const wsUrl = `${EMERGENCY_RELAY_URL.replace('https://', 'wss://').replace('http://', 'ws://')}/${MATCHMAKING_TOPIC}/ws`;
+      const ws = new WebSocket(wsUrl);
+      relayWsRef.current = ws;
+      const myJoinTime = Date.now();
+
+      ws.onopen = () => {
+        const seekPacket = {
+          type: 'seek',
+          playerId,
+          playerName: playerNameRef.current,
+          preferredRole,
+          timestamp: myJoinTime,
+        };
+        fetch(`${EMERGENCY_RELAY_URL}/${MATCHMAKING_TOPIC}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(seekPacket),
+        }).catch(() => {});
+
+        matchSeekIntervalRef.current = window.setInterval(() => {
+          fetch(`${EMERGENCY_RELAY_URL}/${MATCHMAKING_TOPIC}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(seekPacket),
+          }).catch(() => {});
+        }, 2500);
+
+        matchTimeoutRef.current = window.setTimeout(() => {
+          if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
+          setIsSearching(false);
+          setMatchStatusText('No opponent found. Try creating a private room code!');
+        }, 45000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const envelope = JSON.parse(event.data);
+          if (envelope.event !== 'message') return;
+          const msg = JSON.parse(envelope.message);
+
+          if (msg.type === 'seek' && msg.playerId !== playerId) {
+            if (myJoinTime > msg.timestamp || (myJoinTime === msg.timestamp && playerId > msg.playerId)) {
+              const code = Math.random().toString(36).substring(2, 7).toUpperCase();
+              const roomId = `bc_${code}`;
+              const roleForMe: PlayerRole =
+                preferredRole === 'tiger' || msg.preferredRole === 'goat' ? 'tiger' : 'goat';
+              const roleForSeeker: PlayerRole = roleForMe === 'tiger' ? 'goat' : 'tiger';
+
+              fetch(`${EMERGENCY_RELAY_URL}/${MATCHMAKING_TOPIC}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'match_found',
+                  seekerId: msg.playerId,
+                  proposerId: playerId,
+                  roomId,
+                  roleSeeker: roleForSeeker,
+                  roleProposer: roleForMe,
+                  nameSeeker: msg.playerName,
+                  nameProposer: playerNameRef.current,
+                }),
+              }).catch(() => {});
+
+              if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
+              if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
+              setupRoom(roomId, roleForMe, msg.playerName, roleForMe === 'goat', true);
+            }
+          }
+
+          if (msg.type === 'match_found' && msg.seekerId === playerId) {
+            if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
+            if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
+            setupRoom(msg.roomId, msg.roleSeeker, msg.nameProposer, msg.roleSeeker === 'goat', true);
+          }
+        } catch (e) {}
+      };
+    } catch (err) {
+      setIsSearching(false);
+      setMatchStatusText('Matchmaking failed. Try a private room code!');
+    }
   };
 
-  const sendMove = (move: Move, nextState: GameState, block?: LedgerBlock) => {
-    if (block) {
-      setLedgerChain([...ledgerRef.current.chain]);
+  const cancelAutoMatch = () => {
+    cleanupConnection();
+    setMatchStatusText('Search cancelled.');
+  };
+
+  const joinCustomRoom = async (roomId: string, asHost: boolean) => {
+    cleanupConnection();
+    setIsSearching(false);
+    setMatchStatusText(asHost ? 'Creating private room...' : 'Joining room...');
+
+    const role: PlayerRole = asHost ? 'goat' : 'tiger';
+    setupRoom(roomId, role, asHost ? 'Waiting for Friend...' : 'Room Host', asHost, !asHost);
+  };
+
+  const attemptManualReconnect = () => {
+    if (!currentRoomIdRef.current) return;
+    setMatchStatusText('Attempting reconnect to opponent...');
+
+    if (pcRef.current) {
+      try {
+        if ('restartIce' in pcRef.current) {
+          (pcRef.current as any).restartIce();
+        }
+      } catch (e) {}
     }
 
-    const payload = {
-      type: 'ledger_block',
+    sendPayload({
+      type: 'heartbeat_ping',
       sender: isInitiatorRef.current ? 'host' : 'guest',
-      move,
+      timestamp: Date.now(),
+    });
+  };
+
+  /**
+   * PURE CRYPTOGRAPHIC MOVE DISPATCH:
+   * The local move is authored into a LedgerBlock, appended to the immutable local ledger,
+   * and transmitted over WebRTC DataChannel (with tiered signaling backup).
+   */
+  const sendMove = async (move: Move, nextState: GameState, block?: LedgerBlock) => {
+    if (!block) {
+      // Author block if not pre-constructed
+      block = await ledgerRef.current.createBlock(move.piece, move, move.captured);
+    }
+
+    await ledgerRef.current.appendLocalBlock(block);
+    setLedgerChain([...ledgerRef.current.chain]);
+
+    // Send purely the cryptographic block (and lightweight move history for sync verification)
+    sendPayload({
+      type: 'crypto_block',
+      sender: isInitiatorRef.current ? 'host' : 'guest',
       block,
-      state: nextState,
-    };
-
-    if (dcRef.current && dcRef.current.readyState === 'open') {
-      try {
-        dcRef.current.send(JSON.stringify(payload));
-      } catch (err) {}
-    }
-
-    if (currentRoomIdRef.current) {
-      const topic = getCleanTopic(currentRoomIdRef.current);
-      publishToTopic(topic, payload);
-    }
+      history: nextState.moveHistory,
+    });
   };
 
-  const sendRestart = () => {
-    ledgerRef.current.reset();
-    setLedgerChain([]);
-
-    const payload = {
-      type: 'restart',
+  const sendResign = () => {
+    sendPayload({
+      type: 'resign',
       sender: isInitiatorRef.current ? 'host' : 'guest',
-    };
+      playerRole: roleRef.current,
+    });
+  };
 
-    if (dcRef.current && dcRef.current.readyState === 'open') {
-      try {
-        dcRef.current.send(JSON.stringify(payload));
-      } catch (err) {}
-    }
+  const sendLeaveRoom = () => {
+    sendPayload({
+      type: 'player_left',
+      sender: isInitiatorRef.current ? 'host' : 'guest',
+    });
+    cleanupConnection();
+  };
 
-    if (currentRoomIdRef.current) {
-      const topic = getCleanTopic(currentRoomIdRef.current);
-      publishToTopic(topic, payload);
-    }
+  const requestRematch = () => {
+    setRematchStatus('requested_by_me');
+    sendPayload({
+      type: 'rematch_request',
+      sender: isInitiatorRef.current ? 'host' : 'guest',
+    });
+  };
+
+  const acceptRematch = () => {
+    sendPayload({
+      type: 'rematch_accept',
+      sender: isInitiatorRef.current ? 'host' : 'guest',
+    });
+    handleRematchStart();
+  };
+
+  const declineRematch = () => {
+    sendPayload({
+      type: 'rematch_declined',
+      sender: isInitiatorRef.current ? 'host' : 'guest',
+    });
+    setRematchStatus('idle');
+    cleanupConnection();
   };
 
   return {
@@ -603,14 +1036,23 @@ export function useWebRTCGame({
     isSearching,
     matchStatusText,
     dataChannelOpen,
+    signalingTier,
+    connectionHealth,
     isOpponentDisconnected,
     disconnectSecondsLeft,
+    pingLatencyMs,
+    rematchStatus,
     ledgerChain,
     startAutoMatch,
     cancelAutoMatch,
     joinCustomRoom,
+    attemptManualReconnect,
     sendMove,
-    sendRestart,
+    sendResign,
+    sendLeaveRoom,
+    requestRematch,
+    acceptRematch,
+    declineRematch,
     cleanupConnection,
   };
 }

@@ -35,9 +35,11 @@ export function savePlayerProfile(profile: PlayerProfile): void {
 }
 
 export function recordMatchResult(
-  item: Omit<MatchHistoryItem, 'id' | 'date'>
+  currentProfileOrItem: PlayerProfile | Omit<MatchHistoryItem, 'id' | 'date'>,
+  maybeItem?: Omit<MatchHistoryItem, 'id' | 'date'>
 ): PlayerProfile {
-  const profile = loadPlayerProfile();
+  const profile = maybeItem ? (currentProfileOrItem as PlayerProfile) : loadPlayerProfile();
+  const item = maybeItem ? maybeItem : (currentProfileOrItem as Omit<MatchHistoryItem, 'id' | 'date'>);
   const isWin = item.result === 'won';
 
   const newHistoryItem: MatchHistoryItem = {

@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'np.com.grisma.baghchal',
   appName: 'Baghchal',
   webDir: 'dist',
-  bundledWebRuntime: false,
   server: {
     androidScheme: 'https',
     cleartext: false,
@@ -19,6 +18,11 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
     captureInput: true,
     webContentsDebuggingEnabled: false,
+  },
+  ios: {
+    contentInset: 'always',
+    allowsLinkPreview: false,
+    scrollEnabled: false,
   },
 };
 

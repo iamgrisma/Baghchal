@@ -235,10 +235,10 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
               y1={nodeCoords[lastMove.from].y}
               x2={nodeCoords[lastMove.to].x}
               y2={nodeCoords[lastMove.to].y}
-              stroke={lastMove.type === 'jump' ? '#ef4444' : currentTheme.accentGlow}
-              strokeWidth={lastMove.type === 'jump' ? '4.5' : '3'}
-              strokeDasharray={lastMove.type === 'jump' ? '8 4' : '6 4'}
-              strokeOpacity="0.9"
+              stroke={currentTheme.accentGlow}
+              strokeWidth="3"
+              strokeDasharray="6 4"
+              strokeOpacity="0.8"
             />
           )}
 
@@ -248,7 +248,6 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             const isSelected = selectedPos === idx;
             const validMove = validDestinationMap.get(idx);
             const isTarget = !!validMove;
-            const isJumpTarget = validMove?.type === 'jump';
             const isTrappedTiger = piece === 'tiger' && trappedInfo.trappedIndices.includes(idx);
 
             return (
@@ -261,19 +260,19 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                 <circle cx={pos.x} cy={pos.y} r="5" fill={currentTheme.studColor} stroke={currentTheme.studRing} strokeWidth="1.6" />
                 <circle cx={pos.x - 1.2} cy={pos.y - 1.2} r="1.5" fill="#ffffff" opacity="0.6" />
 
-                {/* Tactical Beacon for valid placements/moves */}
+                {/* Tactical Beacon for valid placements/moves - Uniform neutral indicator without giving away kills */}
                 {isTarget && (
                   <g className="transition-transform duration-150 hover:scale-110">
                     <circle
                       cx={pos.x}
                       cy={pos.y}
-                      r={isJumpTarget ? 18 : 14}
-                      fill={isJumpTarget ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.22)'}
-                      stroke={isJumpTarget ? '#ef4444' : currentTheme.brassLine}
-                      strokeWidth={isJumpTarget ? 2.5 : 2}
+                      r={14}
+                      fill="rgba(245, 158, 11, 0.22)"
+                      stroke={currentTheme.brassLine}
+                      strokeWidth={2}
                       className="animate-pulse"
                     />
-                    <circle cx={pos.x} cy={pos.y} r={isJumpTarget ? 6 : 4.5} fill={isJumpTarget ? '#ef4444' : currentTheme.brassLine} />
+                    <circle cx={pos.x} cy={pos.y} r={4.5} fill={currentTheme.brassLine} />
                   </g>
                 )}
 
@@ -307,7 +306,17 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
 
                         {/* Trapped State Ring */}
                         {isTrappedTiger && (
-                          <circle cx={pos.x} cy={pos.y} r="24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeDasharray="5 3" className="animate-spin-slow" />
+                          <circle
+                            cx={pos.x}
+                            cy={pos.y}
+                            r="24"
+                            fill="none"
+                            stroke={currentTheme.brassLine}
+                            strokeWidth="2"
+                            strokeDasharray="4 3"
+                            strokeOpacity="0.75"
+                            className="animate-spin-slow"
+                          />
                         )}
                       </g>
                     )}

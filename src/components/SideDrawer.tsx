@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   X,
   Volume2,
@@ -11,6 +11,8 @@ import {
   History,
   Palette,
   LogOut,
+  Flag,
+  AlertTriangle,
 } from 'lucide-react';
 import { BoardTheme, GameMode } from '../types';
 
@@ -21,6 +23,7 @@ interface SideDrawerProps {
   canUndo: boolean;
   onUndo: () => void;
   onRestart: () => void;
+  onResignMatch?: () => void;
   isMuted: boolean;
   onToggleSound: () => void;
   boardTheme: BoardTheme;
@@ -40,6 +43,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   canUndo,
   onUndo,
   onRestart,
+  onResignMatch,
   isMuted,
   onToggleSound,
   boardTheme,
@@ -51,7 +55,15 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onOpenLedger,
   onExitToSetup,
 }) => {
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
+
   if (!isOpen) return null;
+
+  const handleResign = () => {
+    setShowResignConfirm(false);
+    onClose();
+    onResignMatch?.();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm animate-fade-in select-none">
@@ -66,7 +78,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={() => {
+              setShowResignConfirm(false);
+              onClose();
+            }}
             className="p-1.5 rounded-lg text-stone-400 hover:text-stone-100 hover:bg-stone-800 transition"
           >
             <X className="w-5 h-5" />
@@ -89,19 +104,54 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 text-xs font-semibold transition"
             >
               <History className="w-4 h-4 text-amber-400" />
-              <span>Match Move History</span>
+              <span>Match Move History (Ledger)</span>
             </button>
 
-            <button
-              onClick={() => {
-                onRestart();
-                onClose();
-              }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-850 border border-stone-800 text-stone-200 text-xs font-semibold transition"
-            >
-              <RotateCcw className="w-4 h-4 text-stone-400" />
-              <span>Restart Match</span>
-            </button>
+            {/* In ONLINE mode, NO unilateral restart! Instead offer Resign Match */}
+            {mode === 'online' ? (
+              showResignConfirm ? (
+                <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/50 space-y-2 animate-fade-in">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-red-200">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                    <span>Concede match to opponent?</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={handleResign}
+                      className="py-1.5 bg-red-600 hover:bg-red-500 text-stone-100 rounded-lg text-xs font-bold transition"
+                    >
+                      Yes, Resign
+                    </button>
+                    <button
+                      onClick={() => setShowResignConfirm(false)}
+                      className="py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-lg text-xs font-medium transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowResignConfirm(true)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-850 border border-stone-800 text-amber-300 hover:text-amber-200 text-xs font-semibold transition"
+                >
+                  <Flag className="w-4 h-4 text-red-400" />
+                  <span>Resign Match</span>
+                </button>
+              )
+            ) : (
+              /* Local / AI mode: Standard Restart */
+              <button
+                onClick={() => {
+                  onRestart();
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-stone-900 hover:bg-stone-850 border border-stone-800 text-stone-200 text-xs font-semibold transition"
+              >
+                <RotateCcw className="w-4 h-4 text-stone-400" />
+                <span>Restart Match</span>
+              </button>
+            )}
 
             {mode === 'online' && (
               <button
@@ -141,7 +191,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 <span>Board Theme</span>
               </div>
               <div className="grid grid-cols-3 gap-1.5 pt-1">
-                {(['classic', 'wood', 'slate'] as BoardTheme[]).map((theme) => (
+                {(['classic', 'slate', 'midnight'] as BoardTheme[]).map((theme) => (
                   <button
                     key={theme}
                     onClick={() => onSelectTheme(theme)}
@@ -209,10 +259,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
             className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-stone-900 hover:bg-stone-850 border border-stone-800 text-red-300 text-xs font-bold transition"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Leave Match / Modes</span>
+            <span>Leave Match / Exit</span>
           </button>
           <div className="text-center text-[10px] text-stone-400">
-            Version 1.1.3 · Clean Minimal Edition
+            Version 1.1.4 · Cross-Platform Edition
           </div>
         </div>
       </div>

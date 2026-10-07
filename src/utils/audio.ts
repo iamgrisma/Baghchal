@@ -30,6 +30,13 @@ class SoundEngine {
     return this.muted;
   }
 
+  public setMuted(muted: boolean): void {
+    this.muted = muted;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('baghchal_muted', String(this.muted));
+    }
+  }
+
   public toggleMute(): boolean {
     this.muted = !this.muted;
     if (typeof window !== 'undefined') {

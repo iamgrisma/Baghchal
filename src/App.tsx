@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameMode, GameState, Move, PlayerRole, AIDifficulty, PlayerProfile, BoardTheme } from './types';
+import { GameMode, GameState, Move, PlayerRole, AIDifficulty, PlayerProfile, BoardTheme, TimerMode } from './types';
 import {
   createInitialGameState,
   applyMove,
@@ -11,6 +11,7 @@ import { getAIMove, getAdaptiveAIDetails } from './game/ai';
 import { BaghchalLedger, LedgerBlock } from './game/ledger';
 import { sound } from './utils/audio';
 import { loadPlayerProfile, recordMatchResult, savePlayerProfile } from './utils/storage';
+import { triggerNativeHaptic } from './utils/nativeHaptics';
 import { useWebRTCGame } from './hooks/useWebRTCGame';
 import { BaghchalBoard } from './components/BaghchalBoard';
 import { SplashScreen } from './components/SplashScreen';
@@ -46,6 +47,8 @@ export default function App() {
   const [difficulty, setDifficulty] = useState<AIDifficulty>('medium');
   const [profile, setProfile] = useState<PlayerProfile>(loadPlayerProfile);
   const [boardTheme, setBoardTheme] = useState<BoardTheme>('classic');
+  const [timerMode, setTimerMode] = useState<TimerMode>('unlimited');
+  const [forfeitDetail, setForfeitDetail] = useState<string | null>(null);
 
   // Blockchain Ledger State
   const [localLedger] = useState(() => new BaghchalLedger());
@@ -75,33 +78,51 @@ export default function App() {
     isSearching,
     matchStatusText,
     dataChannelOpen,
+    connectionHealth,
     isOpponentDisconnected,
     disconnectSecondsLeft,
+    pingLatencyMs,
+    rematchStatus,
     ledgerChain: remoteLedgerChain,
     startAutoMatch,
     cancelAutoMatch,
     joinCustomRoom,
+    attemptManualReconnect,
     sendMove,
-    sendRestart,
+    sendResign,
+    sendLeaveRoom,
+    requestRematch,
+    acceptRematch,
+    declineRematch,
     cleanupConnection,
   } = useWebRTCGame({
     playerName: profile.name,
     gameState,
     onRemoteMove: async (remoteMove, nextState, block) => {
       if (block) {
-        await localLedger.verifyAndAppendBlock(block);
+        const valid = await localLedger.verifyAndAppendBlock(block);
+        if (!valid && nextState.moveHistory) {
+          const rebuilt = await BaghchalLedger.reconstructChainFromHistory(nextState.moveHistory);
+          localLedger.chain = rebuilt.chain;
+          localLedger.pieceMap = rebuilt.pieceMap;
+          localLedger.currentGoatIndex = rebuilt.currentGoatIndex;
+          localLedger.capturedGoats = rebuilt.capturedGoats;
+        }
         setLedgerChain([...localLedger.chain]);
       }
 
       if (remoteMove?.type === 'jump') {
         sound.playAttack();
         triggerTelegramHaptic('heavy');
+        triggerNativeHaptic('heavy');
       } else if (remoteMove?.type === 'place') {
         sound.playPlace('goat');
         triggerTelegramHaptic('light');
+        triggerNativeHaptic('light');
       } else if (remoteMove) {
         sound.playMove(remoteMove.piece);
         triggerTelegramHaptic('medium');
+        triggerNativeHaptic('medium');
       }
 
       const beforeTrapped = getTrappedTigersInfo(gameStateRef.current.board).trappedCount;
@@ -109,35 +130,78 @@ export default function App() {
       if (afterTrapped > beforeTrapped) {
         sound.playTrap();
         triggerTelegramHaptic('success');
+        triggerNativeHaptic('success');
       }
 
       setGameState(nextState);
       setSelectedPos(null);
     },
-    onRemoteRestart: () => {
-      resetGame();
-      try {
-        sound.playGameStart();
-      } catch (e) {}
-    },
-    onOpponentForfeitWin: () => {
+    onOpponentResigned: () => {
       const isUserGoat = userRole === 'goat';
+      setForfeitDetail('Opponent resigned the match. You win!');
       setGameState((prev) => ({
         ...prev,
         status: isUserGoat ? 'goat_won' : 'tiger_won',
       }));
-      try {
-        if (isUserGoat) {
-          sound.playGoatMarchVictory();
-        } else {
-          sound.playAttack();
-        }
-        triggerTelegramHaptic('success');
-      } catch (e) {}
+      sound.playVictory();
+      triggerTelegramHaptic('success');
+      triggerNativeHaptic('success');
+    },
+    onOpponentLeft: () => {
+      const isUserGoat = userRole === 'goat';
+      setForfeitDetail('Opponent left the room. You win by forfeit!');
+      setGameState((prev) => ({
+        ...prev,
+        status: isUserGoat ? 'goat_won' : 'tiger_won',
+      }));
+      sound.playVictory();
+    },
+    onOpponentForfeitWin: () => {
+      const isUserGoat = userRole === 'goat';
+      setForfeitDetail('Opponent forfeited after 30s disconnection. You win!');
+      setGameState((prev) => ({
+        ...prev,
+        status: isUserGoat ? 'goat_won' : 'tiger_won',
+      }));
+      sound.playVictory();
+      triggerTelegramHaptic('success');
+      triggerNativeHaptic('success');
+    },
+    onLocalForfeitLoss: () => {
+      const isUserGoat = userRole === 'goat';
+      setForfeitDetail('You were disconnected from the match for over 30s.');
+      setGameState((prev) => ({
+        ...prev,
+        status: isUserGoat ? 'tiger_won' : 'goat_won',
+      }));
+      sound.playDefeat();
+      triggerTelegramHaptic('error');
+      triggerNativeHaptic('warning');
+    },
+    onRematchRequested: () => {
+      sound.playGameStart();
+      triggerTelegramHaptic('medium');
+      triggerNativeHaptic('medium');
+    },
+    onRematchAccepted: () => {
+      setForfeitDetail(null);
+      resetGame();
+      setShowGameOverModal(false);
+      sound.playGameStart();
+      triggerTelegramHaptic('success');
+      triggerNativeHaptic('success');
+    },
+    onRematchDeclined: () => {
+      setForfeitDetail('Opponent declined rematch or left the room.');
     },
   });
 
-  const activeChain = mode === 'online' && remoteLedgerChain.length > 0 ? remoteLedgerChain : ledgerChain;
+  const activeChain =
+    mode === 'online'
+      ? remoteLedgerChain.length >= ledgerChain.length
+        ? remoteLedgerChain
+        : ledgerChain
+      : ledgerChain;
 
   // Telegram WebApp Initialization
   useEffect(() => {
@@ -165,6 +229,7 @@ export default function App() {
       } catch (e) {}
       try {
         triggerTelegramHaptic('success');
+        triggerNativeHaptic('success');
       } catch (e) {}
       setShowOnlineLobby(false);
     }
@@ -173,12 +238,14 @@ export default function App() {
 
   const handleStartAutoMatch = (role: 'any' | 'tiger' | 'goat') => {
     setMode('online');
+    setForfeitDetail(null);
     resetGame();
     startAutoMatch(role);
   };
 
   const handleJoinCustomRoom = (roomId: string, asHost: boolean) => {
     setMode('online');
+    setForfeitDetail(null);
     resetGame();
     joinCustomRoom(roomId, asHost);
   };
@@ -189,10 +256,24 @@ export default function App() {
   };
 
   const handleLeaveOnlineRoom = () => {
-    cleanupConnection();
+    sendLeaveRoom();
     setMode('ai');
     resetGame();
     setShowOnlineLobby(false);
+    setShowGameOverModal(false);
+  };
+
+  const handleLocalResign = () => {
+    sendResign();
+    const isUserGoat = userRole === 'goat';
+    setForfeitDetail('You conceded the match.');
+    setGameState((prev) => ({
+      ...prev,
+      status: isUserGoat ? 'tiger_won' : 'goat_won',
+    }));
+    sound.playDefeat();
+    triggerTelegramHaptic('error');
+    triggerNativeHaptic('warning');
   };
 
   const userRole: PlayerRole =
@@ -253,6 +334,7 @@ export default function App() {
     setIsAiThinking(false);
     localLedger.reset();
     setLedgerChain([]);
+    setForfeitDetail(null);
     matchStartTime.current = Date.now();
   }, [localLedger]);
 
@@ -281,9 +363,11 @@ export default function App() {
       if (userWon) {
         sound.playVictory();
         triggerTelegramHaptic('success');
+        triggerNativeHaptic('success');
       } else {
         sound.playDefeat();
         triggerTelegramHaptic('error');
+        triggerNativeHaptic('warning');
       }
 
       const durationSeconds = Math.max(1, Math.round((Date.now() - matchStartTime.current) / 1000));
@@ -376,12 +460,15 @@ export default function App() {
     if (move.type === 'jump') {
       sound.playAttack();
       triggerTelegramHaptic('heavy');
+      triggerNativeHaptic('heavy');
     } else if (move.type === 'place') {
       sound.playPlace('goat');
       triggerTelegramHaptic('light');
+      triggerNativeHaptic('light');
     } else {
       sound.playMove(move.piece);
       triggerTelegramHaptic('medium');
+      triggerNativeHaptic('medium');
     }
 
     setHistoryStack((prev) => [...prev, currentState]);
@@ -393,6 +480,7 @@ export default function App() {
     if (afterTrapped > beforeTrapped) {
       sound.playTrap();
       triggerTelegramHaptic('success');
+      triggerNativeHaptic('success');
     }
 
     if (mode === 'online') {
@@ -427,6 +515,7 @@ export default function App() {
     if (pieceAtNode === gameState.turn) {
       setSelectedPos(selectedPos === pos ? null : pos);
       triggerTelegramHaptic('selection');
+      triggerNativeHaptic('light');
       return;
     }
 
@@ -507,6 +596,8 @@ export default function App() {
           mode={mode}
           aiUserRole={aiUserRole}
           difficulty={difficulty}
+          boardTheme={boardTheme}
+          timerMode={timerMode}
           profile={profile}
           onSelectMode={(newMode) => {
             if (mode === 'online' && newMode !== 'online') {
@@ -520,6 +611,8 @@ export default function App() {
             resetGame();
           }}
           onSelectDifficulty={(d) => setDifficulty(d)}
+          onSelectTheme={(t) => setBoardTheme(t)}
+          onSelectTimer={(tm) => setTimerMode(tm)}
           onStartGame={() => {
             resetGame();
             if (mode === 'online') {
@@ -546,10 +639,13 @@ export default function App() {
   return (
     <main
       className="fixed inset-0 w-full h-full h-[100dvh] max-h-[100dvh] bg-stone-950 text-stone-100 flex flex-col justify-between overflow-hidden select-none touch-none"
-      style={{ height: '100dvh', maxHeight: '100dvh' }}
+      style={{
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}
     >
       {/* 1. TOP APP BAR: Opponent Card + Turn Pill + Side Menu Toggle */}
-      <header className="w-full max-w-lg mx-auto h-16 px-3 flex items-center justify-between shrink-0 bg-stone-950/90 border-b border-stone-855 z-10 backdrop-blur-md">
+      <header className="w-full max-w-lg mx-auto h-16 px-3 flex items-center justify-between shrink-0 bg-stone-950/90 border-b border-stone-850 z-10 backdrop-blur-md">
         {/* Opponent Identity Card */}
         <div
           className={`flex items-center gap-2 px-2.5 py-1.5 rounded-2xl border transition ${
@@ -568,15 +664,22 @@ export default function App() {
             )}
           </div>
           <div className="flex flex-col">
-            <span className="text-[11px] font-bold text-stone-200 leading-tight">
-              {mode === 'ai'
-                ? `AI (${difficulty === 'adaptive' ? getAdaptiveAIDetails(profile).tierLabel : difficulty})`
-                : mode === 'online' && roomInfo
-                ? roomInfo.opponentName
-                : opponentRole === 'tiger'
-                ? 'Tiger Player'
-                : 'Goat Player'}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-stone-200 leading-tight">
+                {mode === 'ai'
+                  ? `AI (${difficulty === 'adaptive' ? getAdaptiveAIDetails(profile).tierLabel : difficulty})`
+                  : mode === 'online' && roomInfo
+                  ? roomInfo.opponentName
+                  : opponentRole === 'tiger'
+                  ? 'Tiger Player'
+                  : 'Goat Player'}
+              </span>
+              {mode === 'online' && pingLatencyMs && (
+                <span className="text-[9px] font-mono text-emerald-400">
+                  {pingLatencyMs}ms
+                </span>
+              )}
+            </div>
             {opponentRole === 'tiger' ? (
               <span className="text-[9px] text-amber-400 font-medium">
                 Trapped: <strong className="font-mono text-stone-100">{trappedInfo.trappedCount}/4</strong>
@@ -621,15 +724,59 @@ export default function App() {
         </button>
       </header>
 
-      {/* Opponent Disconnection Warning */}
-      {mode === 'online' && isOpponentDisconnected && (
-        <div className="w-full max-w-lg mx-auto mb-1 flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-200 text-xs shadow-lg animate-pulse z-20">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-            <span className="font-semibold">Opponent offline. Reconnecting...</span>
+      {/* Disconnection Warning & Countdown Banners */}
+      {mode === 'online' && (
+        connectionHealth === 'local_offline' ? (
+          <div className="w-full max-w-lg mx-auto mb-1 flex items-center justify-between px-3 py-1.5 rounded-xl bg-red-950/80 border border-red-500/50 text-red-200 text-xs shadow-lg animate-pulse z-20">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
+              <span className="font-semibold">You are offline. Reconnecting to internet...</span>
+            </div>
+            <button
+              onClick={attemptManualReconnect}
+              className="text-[11px] font-bold text-red-100 bg-red-800/80 hover:bg-red-700 px-2 py-0.5 rounded border border-red-600/50 active:scale-95 transition"
+            >
+              Retry
+            </button>
           </div>
-          <div className="font-mono font-bold text-amber-300 bg-stone-900/80 px-2 py-0.5 rounded border border-amber-600/40">
-            Forfeit in {disconnectSecondsLeft}s
+        ) : isOpponentDisconnected ? (
+          <div className="w-full max-w-lg mx-auto mb-1 flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-200 text-xs shadow-lg animate-pulse z-20">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              <span className="font-semibold">Opponent connection lost. Waiting...</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="font-mono font-bold text-amber-300 bg-stone-900/80 px-2 py-0.5 rounded border border-amber-600/40">
+                Forfeit in {disconnectSecondsLeft}s
+              </div>
+              <button
+                onClick={attemptManualReconnect}
+                className="text-[10px] font-bold text-amber-100 bg-amber-800/60 hover:bg-amber-700 px-1.5 py-0.5 rounded border border-amber-600/40 active:scale-95 transition"
+              >
+                Check
+              </button>
+            </div>
+          </div>
+        ) : null
+      )}
+
+      {/* Rematch Incoming Banner (when modal minimized) */}
+      {mode === 'online' && rematchStatus === 'requested_by_opponent' && !showGameOverModal && (
+        <div className="w-full max-w-lg mx-auto mb-1 flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-950/90 border border-emerald-500/60 text-emerald-100 text-xs shadow-xl animate-bounce z-20">
+          <span className="font-bold">🐅 Opponent requested a rematch!</span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={acceptRematch}
+              className="bg-emerald-600 hover:bg-emerald-500 text-stone-950 px-2.5 py-1 rounded-lg font-bold text-xs"
+            >
+              Accept
+            </button>
+            <button
+              onClick={declineRematch}
+              className="bg-stone-800 hover:bg-stone-700 text-stone-300 px-2 py-1 rounded-lg font-medium text-xs"
+            >
+              Decline
+            </button>
           </div>
         </div>
       )}
@@ -700,6 +847,7 @@ export default function App() {
         canUndo={historyStack.length > 0 && mode !== 'online' && !isAiThinking}
         onUndo={handleUndo}
         onRestart={resetGame}
+        onResignMatch={handleLocalResign}
         isMuted={isMuted}
         onToggleSound={handleToggleSound}
         boardTheme={boardTheme}
@@ -771,13 +919,24 @@ export default function App() {
         isOpen={showGameOverModal}
         status={gameState.status}
         userRole={userRole}
+        goatsCaptured={gameState.goatsCaptured}
+        totalTurns={gameState.moveHistory.length}
+        isOnline={mode === 'online'}
+        rematchStatus={rematchStatus}
+        forfeitDetail={forfeitDetail}
+        onRequestRematch={requestRematch}
+        onAcceptRematch={acceptRematch}
+        onDeclineRematch={declineRematch}
         onPlayAgain={() => {
           resetGame();
-          if (mode === 'online') sendRestart();
           setShowGameOverModal(false);
         }}
         onChangeMode={() => {
-          resetGame();
+          if (mode === 'online') {
+            handleLeaveOnlineRoom();
+          } else {
+            resetGame();
+          }
           setShowGameOverModal(false);
           setCurrentScreen('setup');
         }}

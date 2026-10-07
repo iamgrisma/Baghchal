@@ -13,13 +13,16 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "cap:sync": "npm run build && npx cap sync android",
-    "cap:open": "npx cap open android"
+    "cap:open": "npx cap open android",
+    "cap:sync:ios": "npm run build && npx cap sync ios",
+    "cap:open:ios": "npx cap open ios"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.1",
     "@capacitor/app": "^7.0.0",
     "@capacitor/core": "^7.0.1",
     "@capacitor/haptics": "^7.0.0",
+    "@capacitor/ios": "^7.0.1",
     "@capacitor/status-bar": "^7.0.0",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",

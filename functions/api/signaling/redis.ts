@@ -10,9 +10,6 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const DEFAULT_REDIS_URL = 'https://helpful-giraffe-305470.upstash.io';
-const DEFAULT_REDIS_TOKEN = 'gQAAAAAABKk-AAIgcDEwOWMwN2EwNDZmNzU0NDBlYmVmMTAxNjc1Y2MwNGM5Zg';
-
 export const onRequestOptions: PagesFunction = async () => {
   return new Response(null, {
     status: 204,
@@ -21,8 +18,15 @@ export const onRequestOptions: PagesFunction = async () => {
 };
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
-  const url = context.env.UPSTASH_REDIS_REST_URL || DEFAULT_REDIS_URL;
-  const token = context.env.UPSTASH_REDIS_REST_TOKEN || DEFAULT_REDIS_TOKEN;
+  const url = context.env.UPSTASH_REDIS_REST_URL || context.env.UPSTASH_REDIS_URL || (context.env as any).UPSTACH_REDIS_URL;
+  const token = context.env.UPSTASH_REDIS_REST_TOKEN || context.env.UPSTASH_REDIS_TOKEN || (context.env as any).UPSTACH_REDIS_TOKEN;
+
+  if (!url || !token) {
+    return new Response(JSON.stringify({ error: 'Upstash Redis signaling not configured' }), {
+      status: 503,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    });
+  }
 
   let body: any = {};
   try {

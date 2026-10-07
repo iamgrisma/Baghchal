@@ -47,6 +47,14 @@ export interface MatchRecord {
   durationSeconds: number;
 }
 
+export type MatchHistoryItem = MatchRecord;
+
+export type RematchStatus = 'idle' | 'requested_by_me' | 'requested_by_opponent' | 'accepted';
+
+export type ConnectionHealth = 'connected' | 'reconnecting' | 'opponent_offline' | 'local_offline' | 'disconnected';
+
+export type SignalingTier = 'durable_object' | 'redis_kv' | 'emergency_relay' | 'disconnected';
+
 export interface PlayerProfile {
   name: string;
   gamesPlayed: number;
