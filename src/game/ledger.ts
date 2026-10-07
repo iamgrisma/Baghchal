@@ -1,24 +1,33 @@
 import { Move, PlayerRole } from '../types';
 
+/**
+ * Grid coordinates mapping (0 to 24 mapped to letters 'a' through 'y')
+ */
 export const POS_TO_CHAR: Record<number, string> = {};
 export const CHAR_TO_POS: Record<string, number> = {};
 
 for (let i = 0; i < 25; i++) {
-  const char = String.fromCharCode(97 + i); // 97 = 'a'
+  const char = String.fromCharCode(97 + i); // 97 is ASCII 'a'
   POS_TO_CHAR[i] = char;
   CHAR_TO_POS[char] = i;
 }
 
+/**
+ * Systematic Tiger Identifiers and their home corners
+ */
 export const TIGER_IDS = ['A', 'B', 'C', 'D'] as const;
 export type TigerId = typeof TIGER_IDS[number];
 
 export const INITIAL_TIGER_POSITIONS: Record<TigerId, string> = {
-  A: 'a', // index 0 (top left)
-  B: 'e', // index 4 (top right)
-  C: 'u', // index 20 (bottom left)
-  D: 'y', // index 24 (bottom right)
+  A: 'a', // index 0 (top-left)
+  B: 'e', // index 4 (top-right)
+  C: 'u', // index 20 (bottom-left)
+  D: 'y', // index 24 (bottom-right)
 };
 
+/**
+ * Block interface for each verifiable move in the match
+ */
 export interface LedgerBlock {
   index: number;
   prevHash: string;
@@ -26,14 +35,17 @@ export interface LedgerBlock {
   actor: PlayerRole;
   pieceId: string; // 'A'..'D' or 'G1'..'G20'
   action: 'PLACE' | 'MOVE' | 'JUMP';
-  from?: string;
-  to: string;
-  capturedGoatId?: string;
+  from?: string; // 'a'..'y'
+  to: string; // 'a'..'y'
+  capturedGoatId?: string; // e.g. 'G13'
   hash: string;
 }
 
 export const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
+/**
+ * Computes native SHA-256 cryptographic hash using browser Web Crypto
+ */
 export async function calculateBlockHash(data: Omit<LedgerBlock, 'hash'>): Promise<string> {
   const serialized = `${data.index}|${data.prevHash}|${data.timestamp}|${data.actor}|${data.pieceId}|${data.action}|${data.from || ''}|${data.to}|${data.capturedGoatId || ''}`;
   const msgBuffer = new TextEncoder().encode(serialized);
@@ -42,10 +54,13 @@ export async function calculateBlockHash(data: Omit<LedgerBlock, 'hash'>): Promi
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Deterministic Baghchal Ledger Engine
+ */
 export class BaghchalLedger {
   public chain: LedgerBlock[] = [];
   public currentGoatIndex: number = 0;
-  public pieceMap: Map<string, string> = new Map();
+  public pieceMap: Map<string, string> = new Map(); // pieceId -> position char ('a'..'y')
   public capturedGoats: Set<string> = new Set();
 
   constructor() {
@@ -58,6 +73,7 @@ export class BaghchalLedger {
     this.pieceMap.clear();
     this.capturedGoats.clear();
 
+    // Place the four tigers at their standard corner positions
     for (const [tigerId, pos] of Object.entries(INITIAL_TIGER_POSITIONS)) {
       this.pieceMap.set(tigerId, pos);
     }
@@ -68,6 +84,9 @@ export class BaghchalLedger {
     return this.chain[this.chain.length - 1].hash;
   }
 
+  /**
+   * Crafts a new cryptographic block from an in-game move
+   */
   public async createBlock(
     actor: PlayerRole,
     move: Move,
@@ -97,20 +116,15 @@ export class BaghchalLedger {
             break;
           }
         }
-        if (!pieceId) {
-          pieceId = `G${this.currentGoatIndex || 1}`;
-        }
       }
     } else {
+      // Tiger action
       fromChar = POS_TO_CHAR[move.from!];
       for (const [id, pos] of this.pieceMap.entries()) {
         if (TIGER_IDS.includes(id as TigerId) && pos === fromChar) {
           pieceId = id;
           break;
         }
-      }
-      if (!pieceId) {
-        pieceId = 'A';
       }
 
       if (move.type === 'jump') {
@@ -134,7 +148,7 @@ export class BaghchalLedger {
       prevHash,
       timestamp,
       actor,
-      pieceId,
+      pieceId: pieceId || (actor === 'goat' ? `G${this.currentGoatIndex}` : 'A'),
       action,
       from: fromChar,
       to: toChar,
@@ -145,27 +159,28 @@ export class BaghchalLedger {
     return { ...rawBlock, hash };
   }
 
+  /**
+   * Verifies block cryptographic integrity and appends to the chain
+   */
   public async verifyAndAppendBlock(block: LedgerBlock): Promise<boolean> {
     const expectedIndex = this.chain.length;
     const expectedPrevHash = this.getLatestHash();
 
+    // 1. Verify chain continuity
     if (block.index !== expectedIndex || block.prevHash !== expectedPrevHash) {
-      console.warn('Ledger block continuity mismatch:', {
-        receivedIndex: block.index,
-        expectedIndex,
-        receivedPrev: block.prevHash,
-        expectedPrev: expectedPrevHash,
-      });
+      console.warn('Block rejected: Broken link in chain', { block, expectedIndex, expectedPrevHash });
       return false;
     }
 
+    // 2. Re-compute SHA-256 hash
     const { hash, ...blockWithoutHash } = block;
     const computedHash = await calculateBlockHash(blockWithoutHash);
     if (computedHash !== hash) {
-      console.warn('Ledger block hash tampering detected:', { hash, computedHash });
+      console.warn('Block rejected: Tampered SHA-256 hash signature', { hash, computedHash });
       return false;
     }
 
+    // 3. Append block and update positional maps
     this.chain.push(block);
     this.pieceMap.set(block.pieceId, block.to);
 
@@ -184,6 +199,9 @@ export class BaghchalLedger {
     return true;
   }
 
+  /**
+   * Slices missing blocks for delta sync on peer reconnection
+   */
   public getBlocksFrom(startIndex: number): LedgerBlock[] {
     return this.chain.slice(startIndex);
   }

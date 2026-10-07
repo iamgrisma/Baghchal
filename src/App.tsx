@@ -2,19 +2,19 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { GameMode, GameState, Move, PlayerRole, AIDifficulty, PlayerProfile } from './types';
 import { createInitialGameState, applyMove, getTrappedTigersInfo, getAllGoatMoves } from './game/rules';
 import { getAIMove, getAdaptiveAIDetails } from './game/ai';
+import { BaghchalLedger, LedgerBlock } from './game/ledger';
 import { sound } from './utils/audio';
 import { loadPlayerProfile, recordMatchResult, savePlayerProfile } from './utils/storage';
 import { useWebRTCGame } from './hooks/useWebRTCGame';
-import { BaghchalLedger, LedgerBlock } from './game/ledger';
 import { BaghchalBoard } from './components/BaghchalBoard';
 import { SplashScreen } from './components/SplashScreen';
 import { GameSetupScreen } from './components/GameSetupScreen';
 import { RulesModal } from './components/RulesModal';
 import { ProfileModal } from './components/ProfileModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
-import { LedgerFlyMenu } from './components/LedgerFlyMenu';
 import { OnlineLobbyModal } from './components/OnlineLobbyModal';
 import { GameOverModal } from './components/GameOverModal';
+import { LedgerFlyMenu } from './components/LedgerFlyMenu';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import {
   Volume2,
@@ -48,10 +48,10 @@ export default function App() {
   const [difficulty, setDifficulty] = useState<AIDifficulty>('medium');
   const [profile, setProfile] = useState<PlayerProfile>(loadPlayerProfile);
 
-  // Blockchain Ledger Engine & Fly Menu
-  const ledgerRef = useRef<BaghchalLedger>(new BaghchalLedger());
-  const [ledgerBlocks, setLedgerBlocks] = useState<LedgerBlock[]>([]);
-  const [showLedgerFlyMenu, setShowLedgerFlyMenu] = useState(false);
+  // Blockchain Ledger State
+  const [localLedger] = useState(() => new BaghchalLedger());
+  const [ledgerChain, setLedgerChain] = useState<LedgerBlock[]>([]);
+  const [showLedgerMenu, setShowLedgerMenu] = useState(false);
 
   // Audio mute
   const [isMuted, setIsMuted] = useState(() => sound.isMuted());
@@ -69,7 +69,7 @@ export default function App() {
   const gameStateRef = useRef<GameState>(gameState);
   gameStateRef.current = gameState;
 
-  // WebRTC Game Hook with Blockchain Ledger Integration & 30s Forfeit Protection
+  // WebRTC Game Hook with Upstash Redis fallback & 30s forfeit handling
   const {
     roomInfo,
     isSearching,
@@ -77,6 +77,7 @@ export default function App() {
     dataChannelOpen,
     isOpponentDisconnected,
     disconnectSecondsLeft,
+    ledgerChain: remoteLedgerChain,
     startAutoMatch,
     cancelAutoMatch,
     joinCustomRoom,
@@ -86,7 +87,6 @@ export default function App() {
   } = useWebRTCGame({
     playerName: profile.name,
     gameState,
-    ledger: ledgerRef.current,
     onRemoteMove: (remoteMove, nextState, block) => {
       if (remoteMove?.type === 'jump') {
         sound.playAttack();
@@ -99,6 +99,12 @@ export default function App() {
         triggerTelegramHaptic('medium');
       }
 
+      if (block) {
+        localLedger.verifyAndAppendBlock(block).then(() => {
+          setLedgerChain([...localLedger.chain]);
+        });
+      }
+
       const beforeTrapped = getTrappedTigersInfo(gameStateRef.current.board).trappedCount;
       const afterTrapped = getTrappedTigersInfo(nextState.board).trappedCount;
       if (afterTrapped > beforeTrapped) {
@@ -108,7 +114,6 @@ export default function App() {
 
       setGameState(nextState);
       setSelectedPos(null);
-      setLedgerBlocks([...ledgerRef.current.chain]);
     },
     onRemoteRestart: () => {
       resetGame();
@@ -132,6 +137,9 @@ export default function App() {
       } catch (e) {}
     },
   });
+
+  // Keep active chain updated from either local or remote
+  const activeChain = mode === 'online' && remoteLedgerChain.length > 0 ? remoteLedgerChain : ledgerChain;
 
   // Telegram WebApp Initialization
   useEffect(() => {
@@ -240,10 +248,10 @@ export default function App() {
     setHistoryStack([]);
     setSelectedPos(null);
     setIsAiThinking(false);
+    localLedger.reset();
+    setLedgerChain([]);
     matchStartTime.current = Date.now();
-    ledgerRef.current.reset();
-    setLedgerBlocks([]);
-  }, []);
+  }, [localLedger]);
 
   // Handle Game Over Flow & Global Leaderboard update
   useEffect(() => {
@@ -295,6 +303,7 @@ export default function App() {
       });
       setProfile(updated);
 
+      // Submit score to Cloudflare Leaderboard
       const winnerName = userWon ? profile.name : opponentName;
       const winnerId = userWon ? `p_${profile.name.toLowerCase().replace(/[^a-z0-9]/g, '')}` : `p_opp_${Date.now()}`;
       const loserName = userWon ? opponentName : profile.name;
@@ -355,6 +364,12 @@ export default function App() {
   const executeMove = async (move: Move) => {
     const currentState = gameStateRef.current;
 
+    // 1. Create and append Blockchain Ledger Block
+    const capturedPos = move.type === 'jump' ? move.captured : undefined;
+    const block = await localLedger.createBlock(currentState.turn, move, capturedPos);
+    await localLedger.verifyAndAppendBlock(block);
+    setLedgerChain([...localLedger.chain]);
+
     if (move.type === 'jump') {
       sound.playAttack();
       triggerTelegramHaptic('heavy');
@@ -368,12 +383,6 @@ export default function App() {
 
     setHistoryStack((prev) => [...prev, currentState]);
     const nextState = applyMove(currentState, move);
-
-    // Cryptographic Blockchain Block Creation & Verification
-    const capturedPos = move.type === 'jump' ? move.captured : undefined;
-    const block = await ledgerRef.current.createBlock(currentState.turn, move, capturedPos);
-    await ledgerRef.current.verifyAndAppendBlock(block);
-    setLedgerBlocks([...ledgerRef.current.chain]);
 
     const beforeTrapped = getTrappedTigersInfo(currentState.board).trappedCount;
     const afterTrapped = getTrappedTigersInfo(nextState.board).trappedCount;
@@ -611,13 +620,17 @@ export default function App() {
 
         {/* Right: Quick Action Icons */}
         <div className="flex items-center gap-1">
-          {/* Blockchain Ledger Fly Menu Trigger */}
           <button
-            onClick={() => setShowLedgerFlyMenu(true)}
-            className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-400 border border-stone-800 text-xs transition active:scale-95 shadow-sm"
-            title="Inspect Blockchain Ledger Logs"
+            onClick={() => setShowLedgerMenu(true)}
+            className="p-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-400 border border-stone-800 text-xs transition active:scale-95 shadow-sm relative"
+            title="Inspect Blockchain Ledger"
           >
             <Link2 className="w-4 h-4" />
+            {activeChain.length > 0 && (
+              <span className="absolute -top-1 -right-1 px-1 min-w-3.5 h-3.5 rounded-full bg-amber-500 text-stone-950 font-mono text-[9px] font-black flex items-center justify-center">
+                {activeChain.length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setShowLeaderboard(true)}
@@ -737,17 +750,12 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Modals & Overlays */}
+      {/* Modals */}
       <RulesModal isOpen={showRules} onClose={() => setShowRules(false)} />
       <LeaderboardModal
         isOpen={showLeaderboard}
         onClose={() => setShowLeaderboard(false)}
         currentPlayerName={profile.name}
-      />
-      <LedgerFlyMenu
-        isOpen={showLedgerFlyMenu}
-        onClose={() => setShowLedgerFlyMenu(false)}
-        chain={ledgerBlocks}
       />
       <ProfileModal
         isOpen={showProfile}
@@ -804,6 +812,11 @@ export default function App() {
           setShowLeaderboard(true);
         }}
         onReviewBoard={() => setShowGameOverModal(false)}
+      />
+      <LedgerFlyMenu
+        isOpen={showLedgerMenu}
+        onClose={() => setShowLedgerMenu(false)}
+        chain={activeChain}
       />
       <OfflineIndicator />
     </main>
