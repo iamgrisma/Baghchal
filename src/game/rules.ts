@@ -1,4 +1,4 @@
-import { Board, GamePhase, GameState, Move, PieceType, PlayerRole } from '../types';
+import { GamePhase, GameState, Move, PieceType, PlayerRole } from '../types';
 
 /**
  * 5x5 Grid positions: 0 to 24
@@ -29,7 +29,6 @@ export const ADJACENCY: number[][] = Array.from({ length: 25 }, (_, i) => {
   return neighbors;
 });
 
-// Direction vectors
 const ORTHOGONAL_DIRS = [
   [-1, 0],
   [1, 0],
@@ -43,6 +42,21 @@ const DIAGONAL_DIRS = [
   [1, -1],
   [1, 1],
 ];
+
+/**
+ * Canonical position hash for repetition detection and transposition tables.
+ */
+export function getPositionHash(
+  board: PieceType[],
+  turn: PlayerRole,
+  goatsInReserve: number,
+  goatsCaptured: number
+): string {
+  const chars = board
+    .map((p) => (p === 'tiger' ? 'T' : p === 'goat' ? 'G' : '.'))
+    .join('');
+  return `${chars}:${turn[0]}:${goatsInReserve}:${goatsCaptured}`;
+}
 
 /**
  * Creates the initial Baghchal board state.
@@ -98,12 +112,10 @@ export function getTigerMovesForPos(board: PieceType[], pos: number): Move[] {
     const landR = r + 2 * dr;
     const landC = c + 2 * dc;
 
-    // Check bounds for landing spot
     if (landR >= 0 && landR < 5 && landC >= 0 && landC < 5) {
       const midPos = midR * 5 + midC;
       const landPos = landR * 5 + landC;
 
-      // Must jump over a goat into an empty spot
       if (board[midPos] === 'goat' && board[landPos] === null) {
         moves.push({
           type: 'jump',
@@ -138,7 +150,6 @@ export function getAllTigerMoves(board: PieceType[]): Move[] {
 export function getAllGoatMoves(board: PieceType[], goatsInReserve: number): Move[] {
   const moves: Move[] = [];
 
-  // Placement Phase: Goat player places 1 goat on ANY empty spot
   if (goatsInReserve > 0) {
     for (let i = 0; i < 25; i++) {
       if (board[i] === null) {
@@ -152,7 +163,6 @@ export function getAllGoatMoves(board: PieceType[], goatsInReserve: number): Mov
     return moves;
   }
 
-  // Movement Phase: Goat moves to an adjacent empty spot
   for (let i = 0; i < 25; i++) {
     if (board[i] === 'goat') {
       for (const nextPos of ADJACENCY[i]) {
@@ -229,18 +239,15 @@ export function applyMove(state: GameState, move: Move): GameState {
   const nextPhase: GamePhase = nextReserve === 0 ? 'movement' : 'placement';
   const nextTurn: PlayerRole = state.turn === 'goat' ? 'tiger' : 'goat';
 
-  // Check victory condition
   let nextStatus: GameState['status'] = 'playing';
 
   if (nextCaptured >= 5) {
     nextStatus = 'tiger_won';
   } else {
-    // Check if tigers are completely immobilized
     const { trappedCount } = getTrappedTigersInfo(nextBoard);
     if (trappedCount === 4) {
       nextStatus = 'goat_won';
     } else if (nextTurn === 'goat' && nextPhase === 'movement') {
-      // Rare edge case: Goats have 0 legal moves
       const goatMoves = getAllGoatMoves(nextBoard, nextReserve);
       if (goatMoves.length === 0) {
         nextStatus = 'tiger_won';

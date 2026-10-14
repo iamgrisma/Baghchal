@@ -25,7 +25,7 @@ import { OnlineLobbyModal } from './components/OnlineLobbyModal';
 import { GameOverModal } from './components/GameOverModal';
 import { LedgerFlyMenu } from './components/LedgerFlyMenu';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { Menu, RotateCcw } from 'lucide-react';
+import { Menu, RotateCcw, Clock } from 'lucide-react';
 import {
   initTelegramWebApp,
   isTelegramWebApp,
@@ -49,6 +49,11 @@ export default function App() {
   const [profile, setProfile] = useState<PlayerProfile>(loadPlayerProfile);
   const [boardTheme, setBoardTheme] = useState<BoardTheme>('classic');
   const [timerMode, setTimerMode] = useState<TimerMode>('unlimited');
+  const [turnSecondsLeft, setTurnSecondsLeft] = useState<number>(30);
+  const [blitzClocks, setBlitzClocks] = useState<{ goat: number; tiger: number }>({
+    goat: 300,
+    tiger: 300,
+  });
   const [forfeitDetail, setForfeitDetail] = useState<string | null>(null);
 
   // Blockchain Ledger State
@@ -78,7 +83,6 @@ export default function App() {
     roomInfo,
     isSearching,
     matchStatusText,
-    dataChannelOpen,
     connectionHealth,
     isOpponentDisconnected,
     disconnectSecondsLeft,
@@ -212,7 +216,6 @@ export default function App() {
     const deepRoom = getTelegramStartParam();
     if (deepRoom) {
       setMode('online');
-      resetGame();
       joinCustomRoom(deepRoom, false);
       setCurrentScreen('play');
     }
@@ -285,7 +288,6 @@ export default function App() {
 
   const handleCancelAutoMatch = () => {
     cancelAutoMatch();
-    setMode('ai');
   };
 
   const handleLeaveOnlineRoom = () => {
@@ -368,8 +370,70 @@ export default function App() {
     localLedger.reset();
     setLedgerChain([]);
     setForfeitDetail(null);
+    setTurnSecondsLeft(30);
+    setBlitzClocks({ goat: 300, tiger: 300 });
     matchStartTime.current = Date.now();
   }, [localLedger]);
+
+  // Reset turn clock on each move
+  useEffect(() => {
+    if (timerMode === 'turn30s') {
+      setTurnSecondsLeft(30);
+    }
+  }, [gameState.turn, gameState.moveHistory.length, timerMode]);
+
+  // Active Match Clock Countdown (30s Turn & 5m Blitz)
+  useEffect(() => {
+    if (gameState.status !== 'playing' || currentScreen !== 'play') return;
+    if (timerMode === 'unlimited') return;
+    if (mode === 'online' && (!roomInfo || !roomInfo.connected)) return;
+
+    const interval = window.setInterval(() => {
+      if (timerMode === 'turn30s') {
+        setTurnSecondsLeft((prev) => {
+          if (prev <= 1) {
+            const currentTurn = gameStateRef.current.turn;
+            const winningStatus = currentTurn === 'goat' ? 'tiger_won' : 'goat_won';
+            setForfeitDetail(
+              `${currentTurn === 'goat' ? 'Goat' : 'Tiger'} ran out of time (30s turn clock)!`
+            );
+            setGameState((s) => ({ ...s, status: winningStatus }));
+            return 0;
+          }
+          if (prev <= 6 && isUserTurn()) {
+            triggerTelegramHaptic('light');
+          }
+          return prev - 1;
+        });
+      } else if (timerMode === 'blitz5m') {
+        setBlitzClocks((prev) => {
+          const currentTurn = gameStateRef.current.turn;
+          const nextTime = Math.max(0, prev[currentTurn] - 1);
+
+          if (nextTime === 0) {
+            const winningStatus = currentTurn === 'goat' ? 'tiger_won' : 'goat_won';
+            setForfeitDetail(
+              `${currentTurn === 'goat' ? 'Goat' : 'Tiger'} flagged on 5m Blitz clock!`
+            );
+            setGameState((s) => ({ ...s, status: winningStatus }));
+          }
+
+          return {
+            ...prev,
+            [currentTurn]: nextTime,
+          };
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [gameState.status, currentScreen, timerMode, mode, roomInfo, isUserTurn]);
+
+  const formatClock = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
 
   // Handle Game Over
   useEffect(() => {
@@ -723,6 +787,22 @@ export default function App() {
               </span>
             )}
           </div>
+          {timerMode !== 'unlimited' && gameState.status === 'playing' && (
+            <div
+              className={`ml-1 px-1.5 py-0.5 rounded-lg font-mono text-[10px] font-bold border flex items-center gap-1 ${
+                isOpponentTurn
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-stone-950 text-stone-500 border-stone-800'
+              }`}
+            >
+              <Clock className="w-2.5 h-2.5" />
+              <span>
+                {timerMode === 'turn30s'
+                  ? `${isOpponentTurn ? turnSecondsLeft : 30}s`
+                  : formatClock(blitzClocks[opponentRole])}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Center: Turn Status Guidance */}
@@ -854,9 +934,27 @@ export default function App() {
               </span>
             )}
           </div>
+          {timerMode !== 'unlimited' && gameState.status === 'playing' && (
+            <div
+              className={`ml-1 px-1.5 py-0.5 rounded-lg font-mono text-[10px] font-bold border flex items-center gap-1 ${
+                isUserTurn()
+                  ? turnSecondsLeft <= 5 && timerMode === 'turn30s'
+                    ? 'bg-red-950/80 text-red-300 border-red-500 animate-pulse'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-stone-950 text-stone-500 border-stone-800'
+              }`}
+            >
+              <Clock className="w-2.5 h-2.5" />
+              <span>
+                {timerMode === 'turn30s'
+                  ? `${isUserTurn() ? turnSecondsLeft : 30}s`
+                  : formatClock(blitzClocks[userRole])}
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Quick Undo Button (Single action in footer) */}
+        {/* Quick Undo Button */}
         <button
           onClick={handleUndo}
           disabled={historyStack.length === 0 || mode === 'online' || isAiThinking}
