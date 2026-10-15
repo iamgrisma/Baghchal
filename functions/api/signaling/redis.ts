@@ -1,6 +1,8 @@
 interface Env {
   UPSTASH_REDIS_REST_URL?: string;
   UPSTASH_REDIS_REST_TOKEN?: string;
+  UPSTASH_REDIS_URL?: string;
+  UPSTASH_REDIS_TOKEN?: string;
   [key: string]: any;
 }
 
@@ -18,8 +20,8 @@ export const onRequestOptions: PagesFunction = async () => {
 };
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
-  const url = context.env.UPSTASH_REDIS_REST_URL || context.env.UPSTASH_REDIS_URL || (context.env as any).UPSTACH_REDIS_URL;
-  const token = context.env.UPSTASH_REDIS_REST_TOKEN || context.env.UPSTASH_REDIS_TOKEN || (context.env as any).UPSTACH_REDIS_TOKEN;
+  const url = context.env.UPSTASH_REDIS_REST_URL || context.env.UPSTASH_REDIS_URL;
+  const token = context.env.UPSTASH_REDIS_REST_TOKEN || context.env.UPSTASH_REDIS_TOKEN;
 
   if (!url || !token) {
     return new Response(JSON.stringify({ error: 'Upstash Redis signaling not configured' }), {
