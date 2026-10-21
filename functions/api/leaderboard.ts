@@ -13,28 +13,7 @@ const CORS_HEADERS = {
 };
 
 // Global in-memory fallback store
-const fallbackLeaderboard: any[] = [
-  {
-    id: 'p_grisma',
-    name: 'Grisma',
-    rating: 1520,
-    wins: 12,
-    losses: 2,
-    tigersTrapped: 8,
-    goatsCaptured: 20,
-    updatedAt: Date.now(),
-  },
-  {
-    id: 'p_bot_master',
-    name: 'Baghchal Bot (Master)',
-    rating: 1450,
-    wins: 10,
-    losses: 4,
-    tigersTrapped: 3,
-    goatsCaptured: 32,
-    updatedAt: Date.now() - 100000,
-  },
-];
+const fallbackLeaderboard: any[] = [];
 
 export const onRequestOptions: PagesFunction<Env> = async () => {
   return new Response(null, {
@@ -111,13 +90,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   const now = Date.now();
-  let existingIndex = fallbackLeaderboard.findIndex((p) => p.id === winnerId);
-  if (existingIndex !== -1) {
-    fallbackLeaderboard[existingIndex].wins += 1;
-    fallbackLeaderboard[existingIndex].rating += 25;
-    if (winnerRole === 'tiger') fallbackLeaderboard[existingIndex].goatsCaptured += goatsEaten || 0;
-    else fallbackLeaderboard[existingIndex].tigersTrapped += 1;
-    fallbackLeaderboard[existingIndex].updatedAt = now;
+  let existingWinner = fallbackLeaderboard.find((p) => p.id === winnerId);
+  if (existingWinner) {
+    existingWinner.wins += 1;
+    existingWinner.rating += 25;
+    if (winnerRole === 'tiger') existingWinner.goatsCaptured += goatsEaten || 0;
+    else existingWinner.tigersTrapped += 1;
+    existingWinner.updatedAt = now;
   } else {
     fallbackLeaderboard.push({
       id: winnerId,
@@ -129,6 +108,26 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       goatsCaptured: winnerRole === 'tiger' ? (goatsEaten || 0) : 0,
       updatedAt: now,
     });
+  }
+
+  if (loserId && loserName) {
+    let existingLoser = fallbackLeaderboard.find((p) => p.id === loserId);
+    if (existingLoser) {
+      existingLoser.losses += 1;
+      existingLoser.rating = Math.max(1000, existingLoser.rating - 15);
+      existingLoser.updatedAt = now;
+    } else {
+      fallbackLeaderboard.push({
+        id: loserId,
+        name: loserName,
+        rating: 1185,
+        wins: 0,
+        losses: 1,
+        tigersTrapped: 0,
+        goatsCaptured: 0,
+        updatedAt: now,
+      });
+    }
   }
 
   fallbackLeaderboard.sort((a, b) => b.rating - a.rating);

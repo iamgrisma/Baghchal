@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Trophy, X, RefreshCw, Award, Shield, Swords, Flame } from 'lucide-react';
+import { Trophy, X, RefreshCw, Award, Shield, Swords, Flame, Sparkles } from 'lucide-react';
 import { LeaderboardPlayer } from '../types';
 import { TigerIcon, GoatIcon } from './GameIcons';
+import { loadPlayerProfile } from '../utils/storage';
 
 interface LeaderboardModalProps {
   isOpen: boolean;
@@ -23,51 +24,67 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     setError(null);
     try {
       const res = await fetch('/api/leaderboard');
-      if (!res.ok) {
-        throw new Error(`Server status ${res.status}`);
+      let remotePlayers: LeaderboardPlayer[] = [];
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          remotePlayers = data;
+        }
       }
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setPlayers(data);
+
+      // Load actual local player profile from localStorage
+      const profile = loadPlayerProfile();
+      const hasPlayed = profile.gamesPlayed > 0;
+      const playerName = currentPlayerName || profile.name || 'You';
+
+      const localPlayerEntry: LeaderboardPlayer | null = hasPlayed
+        ? {
+            id: `p_${playerName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+            name: playerName,
+            rating: Math.max(1000, 1200 + (profile.winsGoat + profile.winsTiger) * 20 - profile.losses * 10),
+            wins: profile.winsGoat + profile.winsTiger,
+            losses: profile.losses,
+            tigersTrapped: profile.winsGoat,
+            goatsCaptured: profile.history.reduce((sum, m) => sum + (m.goatsCaptured || 0), 0),
+            updatedAt: Date.now(),
+          }
+        : null;
+
+      // Merge remote real players with local real player
+      const map = new Map<string, LeaderboardPlayer>();
+      for (const p of remotePlayers) {
+        map.set(p.id, p);
+      }
+      if (localPlayerEntry) {
+        const existing = map.get(localPlayerEntry.id);
+        if (!existing || localPlayerEntry.wins > existing.wins) {
+          map.set(localPlayerEntry.id, localPlayerEntry);
+        }
+      }
+
+      const merged = Array.from(map.values()).sort((a, b) => b.rating - a.rating);
+      setPlayers(merged);
+    } catch (err: any) {
+      console.warn('Leaderboard fetch fallback to local profile:', err);
+      // Fallback to real player's local profile
+      const profile = loadPlayerProfile();
+      if (profile.gamesPlayed > 0) {
+        const playerName = currentPlayerName || profile.name || 'You';
+        setPlayers([
+          {
+            id: 'p_local_me',
+            name: playerName,
+            rating: Math.max(1000, 1200 + (profile.winsGoat + profile.winsTiger) * 20 - profile.losses * 10),
+            wins: profile.winsGoat + profile.winsTiger,
+            losses: profile.losses,
+            tigersTrapped: profile.winsGoat,
+            goatsCaptured: profile.history.reduce((sum, m) => sum + (m.goatsCaptured || 0), 0),
+            updatedAt: Date.now(),
+          },
+        ]);
       } else {
         setPlayers([]);
       }
-    } catch (err: any) {
-      console.warn('Leaderboard fetch fallback:', err);
-      // Fallback local mock master data if remote server is compiling
-      const fallbackList: LeaderboardPlayer[] = [
-        {
-          id: 'p_grisma',
-          name: currentPlayerName || 'Grisma (Master)',
-          rating: 1540,
-          wins: 14,
-          losses: 2,
-          tigersTrapped: 9,
-          goatsCaptured: 25,
-          updatedAt: Date.now(),
-        },
-        {
-          id: 'p_himalayan',
-          name: 'Sherpa Tiger',
-          rating: 1480,
-          wins: 11,
-          losses: 4,
-          tigersTrapped: 4,
-          goatsCaptured: 35,
-          updatedAt: Date.now() - 3600000,
-        },
-        {
-          id: 'p_everest',
-          name: 'Mountain Goat',
-          rating: 1420,
-          wins: 9,
-          losses: 3,
-          tigersTrapped: 7,
-          goatsCaptured: 15,
-          updatedAt: Date.now() - 7200000,
-        },
-      ];
-      setPlayers(fallbackList);
     } finally {
       setLoading(false);
     }

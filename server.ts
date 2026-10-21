@@ -266,6 +266,64 @@ app.get('/api/kv/:roomId', (req, res) => {
   res.json(data);
 });
 
+// Global Leaderboard Endpoints
+const serverLeaderboard: any[] = [];
+
+app.get('/api/leaderboard', (req, res) => {
+  res.json(serverLeaderboard);
+});
+
+app.post('/api/leaderboard', (req, res) => {
+  const { winnerId, winnerName, loserId, loserName, winnerRole, goatsEaten } = req.body || {};
+  if (!winnerId || !winnerName) {
+    res.status(400).json({ error: 'winnerId and winnerName required' });
+    return;
+  }
+  const now = Date.now();
+  let existing = serverLeaderboard.find((p) => p.id === winnerId);
+  if (existing) {
+    existing.wins += 1;
+    existing.rating += 25;
+    if (winnerRole === 'tiger') existing.goatsCaptured += (goatsEaten || 0);
+    else existing.tigersTrapped += 1;
+    existing.updatedAt = now;
+  } else {
+    serverLeaderboard.push({
+      id: winnerId,
+      name: winnerName,
+      rating: 1225,
+      wins: 1,
+      losses: 0,
+      tigersTrapped: winnerRole === 'goat' ? 1 : 0,
+      goatsCaptured: winnerRole === 'tiger' ? (goatsEaten || 0) : 0,
+      updatedAt: now,
+    });
+  }
+
+  if (loserId && loserName) {
+    let existingLoser = serverLeaderboard.find((p) => p.id === loserId);
+    if (existingLoser) {
+      existingLoser.losses += 1;
+      existingLoser.rating = Math.max(1000, existingLoser.rating - 15);
+      existingLoser.updatedAt = now;
+    } else {
+      serverLeaderboard.push({
+        id: loserId,
+        name: loserName,
+        rating: 1185,
+        wins: 0,
+        losses: 1,
+        tigersTrapped: 0,
+        goatsCaptured: 0,
+        updatedAt: now,
+      });
+    }
+  }
+
+  serverLeaderboard.sort((a, b) => b.rating - a.rating);
+  res.json({ success: true, count: serverLeaderboard.length });
+});
+
 // Start Express Server
 async function start() {
   if (process.env.NODE_ENV !== 'production') {
