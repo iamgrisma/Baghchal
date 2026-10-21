@@ -83,21 +83,35 @@ app.post('/api/matchmaking/join', (req, res) => {
     const opponent = waitingQueue[waitingIndex];
     const roomId = `room_${Math.random().toString(36).substring(2, 9)}`;
 
-    // Determine roles
+    // Determine roles cleanly and fairly (random by default)
+    const oppPref = opponent.preferredRole || 'any';
+    const myPref = preferredRole || 'any';
     let hostRole: 'tiger' | 'goat';
     let guestRole: 'tiger' | 'goat';
 
-    if (opponent.preferredRole === 'tiger' || preferredRole === 'goat') {
+    if (oppPref === 'tiger' && myPref === 'goat') {
       hostRole = 'tiger';
       guestRole = 'goat';
-    } else if (opponent.preferredRole === 'goat' || preferredRole === 'tiger') {
+    } else if (oppPref === 'goat' && myPref === 'tiger') {
       hostRole = 'goat';
       guestRole = 'tiger';
+    } else if (oppPref === 'tiger' && myPref === 'any') {
+      hostRole = 'tiger';
+      guestRole = 'goat';
+    } else if (oppPref === 'goat' && myPref === 'any') {
+      hostRole = 'goat';
+      guestRole = 'tiger';
+    } else if (myPref === 'tiger' && oppPref === 'any') {
+      hostRole = 'goat';
+      guestRole = 'tiger';
+    } else if (myPref === 'goat' && oppPref === 'any') {
+      hostRole = 'tiger';
+      guestRole = 'goat';
     } else {
-      // Random assignment
-      const rand = Math.random() > 0.5;
-      hostRole = rand ? 'goat' : 'tiger';
-      guestRole = rand ? 'tiger' : 'goat';
+      // Both requested 'any' or conflicting same role: fair 50/50 coin flip
+      const isHostGoat = Math.random() < 0.5;
+      hostRole = isHostGoat ? 'goat' : 'tiger';
+      guestRole = isHostGoat ? 'tiger' : 'goat';
     }
 
     // Opponent is initiator/host
@@ -193,32 +207,48 @@ app.post('/api/matchmaking/cancel', (req, res) => {
 // Room KV Store: Create or update room data (offer, answer, candidates, fallback gameState)
 app.post('/api/kv/:roomId', (req, res) => {
   const { roomId } = req.params;
-  const payload = req.body || {};
-  const current = kvStore.get(roomId) || {
+  const body = req.body || {};
+  const sender = body.sender || 'unknown';
+  const innerPayload = body.payload || body;
+
+  const current: any = kvStore.get(roomId) || {
     roomId,
     candidatesHost: [],
     candidatesGuest: [],
+    messages: [],
     lastActive: Date.now(),
   };
 
   current.lastActive = Date.now();
+  current.messages = current.messages || [];
 
-  if (payload.offer) current.offer = payload.offer;
-  if (payload.answer) current.answer = payload.answer;
-  if (payload.candidate) {
-    if (payload.sender === 'host') {
-      current.candidatesHost = current.candidatesHost || [];
-      current.candidatesHost.push(payload.candidate);
-    } else {
-      current.candidatesGuest = current.candidatesGuest || [];
-      current.candidatesGuest.push(payload.candidate);
+  if (innerPayload && Object.keys(innerPayload).length > 0) {
+    current.messages.push({
+      sender,
+      payload: innerPayload,
+      ts: Date.now(),
+    });
+    if (current.messages.length > 40) {
+      current.messages = current.messages.slice(-40);
     }
   }
-  if (payload.gameState) {
-    current.gameState = payload.gameState;
+
+  if (innerPayload.offer) current.offer = innerPayload.offer;
+  if (innerPayload.answer) current.answer = innerPayload.answer;
+  if (innerPayload.candidate) {
+    if (sender === 'host' || innerPayload.sender === 'host') {
+      current.candidatesHost = current.candidatesHost || [];
+      current.candidatesHost.push(innerPayload.candidate);
+    } else {
+      current.candidatesGuest = current.candidatesGuest || [];
+      current.candidatesGuest.push(innerPayload.candidate);
+    }
   }
-  if (payload.players) {
-    current.players = { ...current.players, ...payload.players };
+  if (innerPayload.gameState) {
+    current.gameState = innerPayload.gameState;
+  }
+  if (innerPayload.players) {
+    current.players = { ...current.players, ...innerPayload.players };
   }
 
   kvStore.set(roomId, current);
@@ -230,7 +260,7 @@ app.get('/api/kv/:roomId', (req, res) => {
   const { roomId } = req.params;
   const data = kvStore.get(roomId);
   if (!data) {
-    res.json({ notFound: true });
+    res.json({ notFound: true, messages: [] });
     return;
   }
   res.json(data);

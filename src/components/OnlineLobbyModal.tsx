@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Globe, Users, Copy, Check, X, RefreshCw, Sparkles, Share2, LogOut } from 'lucide-react';
 import { OnlineRoomInfo } from '../types';
 import { shareViaTelegram } from '../utils/telegram';
+import { TigerIcon, GoatIcon } from './GameIcons';
 
 interface OnlineLobbyModalProps {
   isOpen: boolean;
@@ -64,7 +65,7 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
   const handleTelegramShare = () => {
     if (roomInfo) {
       const code = (roomInfo.roomId || '').replace('bc_', '').replace('room_', '').toUpperCase();
-      const text = `🐅 Play Baghchal (बाघचाल) with me on Telegram! Join room code: ${code}`;
+      const text = `Play Baghchal (Baghchal) with me on Telegram! Join room code: ${code}`;
       const url = `${window.location.origin}?room=${roomInfo.roomId}`;
       try {
         shareViaTelegram(text, url);
@@ -121,14 +122,28 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                 <div>
                   <div className="text-[11px] text-stone-400">Opponent</div>
                   <div className="text-sm font-bold text-stone-100 flex items-center gap-1.5">
-                    <span>{roomInfo.myRole === 'goat' ? '🐅' : '🐐'}</span>
+                    {roomInfo.myRole === 'goat' ? (
+                      <TigerIcon className="w-4 h-4 text-amber-500" />
+                    ) : (
+                      <GoatIcon className="w-4 h-4 text-stone-200" />
+                    )}
                     <span>{roomInfo.opponentName}</span>
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-[11px] text-stone-400">Your Role</div>
                   <div className="text-sm font-bold text-amber-400 flex items-center justify-end gap-1.5 capitalize">
-                    <span>{roomInfo.myRole === 'goat' ? '🐐 Goat' : '🐅 Tiger'}</span>
+                    {roomInfo.myRole === 'goat' ? (
+                      <>
+                        <GoatIcon className="w-4 h-4 text-stone-200" />
+                        <span>Goat</span>
+                      </>
+                    ) : (
+                      <>
+                        <TigerIcon className="w-4 h-4 text-amber-500" />
+                        <span>Tiger</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -228,7 +243,7 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                             : 'text-stone-400 hover:text-stone-200'
                         }`}
                       >
-                        {r}
+                        {r === 'any' ? 'Random (Default)' : r}
                       </button>
                     ))}
                   </div>

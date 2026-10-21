@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import { Trophy, Swords, RotateCcw, Eye, Award, Check, X, LogOut, Clock, RefreshCw } from 'lucide-react';
 import { GameStatus, PlayerRole, RematchStatus } from '../types';
+import { TigerIcon, GoatIcon } from './GameIcons';
 
 interface GameOverModalProps {
   isOpen: boolean;
@@ -73,8 +74,9 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
         {/* Title */}
         <div>
-          <h2 className="text-xl font-black tracking-tight text-stone-100">
-            {isTigerWon ? '🐅 Tigers Victorious!' : '🐐 Goats Victorious!'}
+          <h2 className="text-xl font-black tracking-tight text-stone-100 flex items-center justify-center gap-2">
+            {isTigerWon ? <TigerIcon className="w-6 h-6 text-amber-500" /> : <GoatIcon className="w-6 h-6 text-stone-200" />}
+            <span>{isTigerWon ? 'Tigers Victorious!' : 'Goats Victorious!'}</span>
           </h2>
           <p className="text-xs text-stone-400 mt-1">
             {forfeitDetail ? (

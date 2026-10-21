@@ -135,19 +135,35 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const opponent = queue[waitingIndex];
     const roomId = `room_${Math.random().toString(36).substring(2, 9)}`;
 
+    // Determine roles cleanly and fairly (random by default)
+    const oppPref = opponent.preferredRole || 'any';
+    const myPref = preferredRole || 'any';
     let hostRole: 'tiger' | 'goat';
     let guestRole: 'tiger' | 'goat';
 
-    if (opponent.preferredRole === 'tiger' || preferredRole === 'goat') {
+    if (oppPref === 'tiger' && myPref === 'goat') {
       hostRole = 'tiger';
       guestRole = 'goat';
-    } else if (opponent.preferredRole === 'goat' || preferredRole === 'tiger') {
+    } else if (oppPref === 'goat' && myPref === 'tiger') {
       hostRole = 'goat';
       guestRole = 'tiger';
+    } else if (oppPref === 'tiger' && myPref === 'any') {
+      hostRole = 'tiger';
+      guestRole = 'goat';
+    } else if (oppPref === 'goat' && myPref === 'any') {
+      hostRole = 'goat';
+      guestRole = 'tiger';
+    } else if (myPref === 'tiger' && oppPref === 'any') {
+      hostRole = 'goat';
+      guestRole = 'tiger';
+    } else if (myPref === 'goat' && oppPref === 'any') {
+      hostRole = 'tiger';
+      guestRole = 'goat';
     } else {
-      const rand = Math.random() > 0.5;
-      hostRole = rand ? 'goat' : 'tiger';
-      guestRole = rand ? 'tiger' : 'goat';
+      // Both requested 'any' or conflicting same role: fair 50/50 coin flip
+      const isHostGoat = Math.random() < 0.5;
+      hostRole = isHostGoat ? 'goat' : 'tiger';
+      guestRole = isHostGoat ? 'tiger' : 'goat';
     }
 
     opponent.matchedRoomId = roomId;

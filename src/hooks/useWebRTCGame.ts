@@ -91,6 +91,10 @@ export function useWebRTCGame({
   const matchSeekIntervalRef = useRef<number | null>(null);
   const matchTimeoutRef = useRef<number | null>(null);
   const matchPollIntervalRef = useRef<number | null>(null);
+  const announceIntervalRef = useRef<number | null>(null);
+
+  // Rematch epoch counter to guard against duplicate/out-of-order role flips
+  const currentMatchEpochRef = useRef<number>(0);
 
   // Heartbeat & Watchdogs
   const heartbeatIntervalRef = useRef<number | null>(null);
@@ -103,6 +107,8 @@ export function useWebRTCGame({
   const roleRef = useRef<PlayerRole | null>(null);
   const isInitiatorRef = useRef(false);
   const localOfferRef = useRef<any>(null);
+
+  const isHighLatency = pingLatencyMs !== null && pingLatencyMs >= 400;
 
   const getCleanTopic = (roomId: string) => {
     const clean = roomId.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -189,9 +195,10 @@ export function useWebRTCGame({
     }
   };
 
-  // 30-Second Forfeit Watchdog
+  // 30-Second Forfeit Watchdog (Guarantees visible countdown and fair forfeit handling)
   const startForfeitCountdown = useCallback(() => {
     if (forfeitCountdownRef.current) return;
+    isOpponentDisconnectedRef.current = true;
     setIsOpponentDisconnected(true);
     setConnectionHealth(navigator.onLine ? 'opponent_offline' : 'local_offline');
     setDisconnectSecondsLeft(30);
@@ -203,6 +210,7 @@ export function useWebRTCGame({
             clearInterval(forfeitCountdownRef.current);
             forfeitCountdownRef.current = null;
           }
+          isOpponentDisconnectedRef.current = false;
           setIsOpponentDisconnected(false);
 
           if (navigator.onLine) {
@@ -222,6 +230,7 @@ export function useWebRTCGame({
   }, [onOpponentForfeitWin, onLocalForfeitLoss]);
 
   const cancelForfeitCountdown = useCallback(() => {
+    isOpponentDisconnectedRef.current = false;
     setIsOpponentDisconnected(false);
     setDisconnectSecondsLeft(30);
     setConnectionHealth('connected');
@@ -250,10 +259,13 @@ export function useWebRTCGame({
         if (!navigator.onLine) {
           setConnectionHealth('local_offline');
           setMatchStatusText('You are offline. Checking your internet connection...');
+          if (!forfeitCountdownRef.current) {
+            startForfeitCountdown();
+          }
         } else {
           setConnectionHealth('opponent_offline');
           setMatchStatusText('Opponent connection lost. Waiting for opponent...');
-          if (!isOpponentDisconnectedRef.current) {
+          if (!forfeitCountdownRef.current) {
             startForfeitCountdown();
           }
         }
@@ -277,6 +289,10 @@ export function useWebRTCGame({
     cancelForfeitCountdown();
     stopHeartbeat();
 
+    if (announceIntervalRef.current) {
+      clearInterval(announceIntervalRef.current);
+      announceIntervalRef.current = null;
+    }
     if (matchSeekIntervalRef.current) {
       clearInterval(matchSeekIntervalRef.current);
       matchSeekIntervalRef.current = null;
@@ -469,7 +485,11 @@ export function useWebRTCGame({
       }
 
       // 2. Rule & Tamper Verification Against Board
-      const currentState = currentGameStateRef.current || createInitialGameState();
+      let currentState = currentGameStateRef.current;
+      if (!currentState || currentState.status !== 'playing' || (block.index === 0 && currentState.moveHistory.length > 0)) {
+        currentState = createInitialGameState();
+        currentGameStateRef.current = currentState;
+      }
       const isLegal = BaghchalLedger.verifyBlockMoveLegal(block, currentState);
 
       if (!isLegal) {
@@ -479,6 +499,7 @@ export function useWebRTCGame({
 
       // 3. Deterministically Map & Project Next State from Cryptographic Block
       const nextState = BaghchalLedger.applyBlockToState(currentState, block);
+      currentGameStateRef.current = nextState;
       const move = BaghchalLedger.blockToMove(block);
 
       onRemoteMove(move, nextState, block);
@@ -498,11 +519,13 @@ export function useWebRTCGame({
 
     // --- MUTUAL REMATCH HANDSHAKE ---
     if (msg.type === 'rematch_request') {
+      const incomingEpoch = typeof msg.matchEpoch === 'number' ? msg.matchEpoch : currentMatchEpochRef.current;
       setRematchStatus((prev) => {
         if (prev === 'requested_by_me') {
           // Both requested rematch simultaneously! Accept immediately!
-          sendPayload({ type: 'rematch_accept', sender: mySenderRole });
-          handleRematchStart();
+          const nextEpoch = Math.max(incomingEpoch, currentMatchEpochRef.current) + 1;
+          sendPayload({ type: 'rematch_accept', sender: mySenderRole, matchEpoch: nextEpoch });
+          handleRematchStart(nextEpoch);
           return 'accepted';
         }
         onRematchRequested?.();
@@ -512,7 +535,18 @@ export function useWebRTCGame({
     }
 
     if (msg.type === 'rematch_accept') {
-      handleRematchStart();
+      const targetEpoch = typeof msg.matchEpoch === 'number' ? msg.matchEpoch : (currentMatchEpochRef.current + 1);
+      // Guard against duplicate deliveries of the same rematch_accept
+      if (targetEpoch > currentMatchEpochRef.current) {
+        handleRematchStart(targetEpoch);
+        sendPayload({ type: 'rematch_sync_ok', sender: mySenderRole, matchEpoch: targetEpoch });
+      }
+      return;
+    }
+
+    if (msg.type === 'rematch_sync_ok') {
+      cancelForfeitCountdown();
+      setConnectionHealth('connected');
       return;
     }
 
@@ -554,17 +588,29 @@ export function useWebRTCGame({
     }
   };
 
-  const handleRematchStart = () => {
+  const handleRematchStart = (targetEpoch?: number) => {
+    const nextEpoch = typeof targetEpoch === 'number' ? targetEpoch : (currentMatchEpochRef.current + 1);
+    currentMatchEpochRef.current = nextEpoch;
+
     ledgerRef.current.reset();
     setLedgerChain([]);
     setRematchStatus('idle');
+    cancelForfeitCountdown();
+    setDisconnectSecondsLeft(30);
 
-    // Swap roles for fair Baghchal play
-    const oldRole = roleRef.current || 'goat';
-    const newRole: PlayerRole = oldRole === 'goat' ? 'tiger' : 'goat';
+    // Swap roles deterministically using nextEpoch so both sides always stay in sync!
+    const hostRole: PlayerRole = (nextEpoch % 2 === 0) ? 'goat' : 'tiger';
+    const guestRole: PlayerRole = (nextEpoch % 2 === 0) ? 'tiger' : 'goat';
+    const newRole: PlayerRole = isInitiatorRef.current ? hostRole : guestRole;
     roleRef.current = newRole;
 
-    setRoomInfo((prev) => (prev ? { ...prev, myRole: newRole } : null));
+    const fresh = createInitialGameState();
+    currentGameStateRef.current = fresh;
+
+    setRoomInfo((prev) => (prev ? { ...prev, myRole: newRole, connected: true } : null));
+    setConnectionHealth('connected');
+    setMatchStatusText(`Rematch started! You are ${newRole === 'goat' ? 'Goat' : 'Tiger'}.`);
+
     onRematchAccepted?.(newRole);
   };
 
@@ -572,6 +618,10 @@ export function useWebRTCGame({
     dcRef.current = dc;
 
     dc.onopen = () => {
+      if (announceIntervalRef.current) {
+        clearInterval(announceIntervalRef.current);
+        announceIntervalRef.current = null;
+      }
       setDataChannelOpen(true);
       cancelForfeitCountdown();
       setConnectionHealth('connected');
@@ -731,6 +781,44 @@ export function useWebRTCGame({
           playerName: playerNameRef.current,
         });
       }
+
+      // Hearty Announcement Loop: guarantees asynchronous matchmaking connects
+      // even if one player takes a couple seconds to complete their status polling.
+      if (announceIntervalRef.current) {
+        clearInterval(announceIntervalRef.current);
+        announceIntervalRef.current = null;
+      }
+
+      let announceCount = 0;
+      announceIntervalRef.current = window.setInterval(() => {
+        announceCount++;
+        if (announceCount > 20 || (dcRef.current && dcRef.current.readyState === 'open')) {
+          if (announceIntervalRef.current) {
+            clearInterval(announceIntervalRef.current);
+            announceIntervalRef.current = null;
+          }
+          return;
+        }
+
+        if (isInitiator) {
+          if (localOfferRef.current && pc.signalingState !== 'stable') {
+            sendTieredSignal({
+              type: 'room_ready',
+              sender: 'host',
+              playerName: playerNameRef.current,
+              offer: localOfferRef.current,
+            });
+          }
+        } else {
+          if (pc.signalingState === 'stable' && (!dcRef.current || dcRef.current.readyState !== 'open')) {
+            sendTieredSignal({
+              type: 'guest_joined',
+              sender: 'guest',
+              playerName: playerNameRef.current,
+            });
+          }
+        }
+      }, 1500);
     } catch (err) {
       console.error('PeerConnection setup error:', err);
     }
@@ -770,7 +858,28 @@ export function useWebRTCGame({
         if (kvRes.ok) {
           const kvData = await kvRes.json();
           if (kvData && !kvData.notFound) {
-            handleIncomingMessage(kvData.payload);
+            const mySender = isInitiator ? 'host' : 'guest';
+            if (Array.isArray(kvData.messages)) {
+              for (const m of kvData.messages) {
+                if (m.sender !== mySender && m.payload) {
+                  handleIncomingMessage(m.payload);
+                }
+              }
+            }
+            if (kvData.offer && !isInitiator && pcRef.current?.signalingState !== 'stable') {
+              handleIncomingMessage({
+                type: 'offer',
+                sender: 'host',
+                offer: kvData.offer,
+              });
+            }
+            if (kvData.answer && isInitiator && pcRef.current?.signalingState === 'have-local-offer') {
+              handleIncomingMessage({
+                type: 'answer',
+                sender: 'guest',
+                answer: kvData.answer,
+              });
+            }
           }
         }
       } catch (e) {}
@@ -896,9 +1005,34 @@ export function useWebRTCGame({
             if (myJoinTime > msg.timestamp || (myJoinTime === msg.timestamp && playerId > msg.playerId)) {
               const code = Math.random().toString(36).substring(2, 7).toUpperCase();
               const roomId = `bc_${code}`;
-              const roleForMe: PlayerRole =
-                preferredRole === 'tiger' || msg.preferredRole === 'goat' ? 'tiger' : 'goat';
-              const roleForSeeker: PlayerRole = roleForMe === 'tiger' ? 'goat' : 'tiger';
+
+              // Determine roles cleanly (random 50/50 by default)
+              let roleForMe: PlayerRole;
+              let roleForSeeker: PlayerRole;
+
+              if (preferredRole === 'tiger' && msg.preferredRole === 'goat') {
+                roleForMe = 'tiger';
+                roleForSeeker = 'goat';
+              } else if (preferredRole === 'goat' && msg.preferredRole === 'tiger') {
+                roleForMe = 'goat';
+                roleForSeeker = 'tiger';
+              } else if (preferredRole === 'tiger') {
+                roleForMe = 'tiger';
+                roleForSeeker = 'goat';
+              } else if (preferredRole === 'goat') {
+                roleForMe = 'goat';
+                roleForSeeker = 'tiger';
+              } else if (msg.preferredRole === 'tiger') {
+                roleForMe = 'goat';
+                roleForSeeker = 'tiger';
+              } else if (msg.preferredRole === 'goat') {
+                roleForMe = 'tiger';
+                roleForSeeker = 'goat';
+              } else {
+                const rand = Math.random() < 0.5;
+                roleForMe = rand ? 'goat' : 'tiger';
+                roleForSeeker = rand ? 'tiger' : 'goat';
+              }
 
               fetch(`${EMERGENCY_RELAY_URL}/${MATCHMAKING_TOPIC}`, {
                 method: 'POST',
@@ -917,14 +1051,14 @@ export function useWebRTCGame({
 
               if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
               if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
-              setupRoom(roomId, roleForMe, msg.playerName, roleForMe === 'goat', true);
+              setupRoom(roomId, roleForMe, msg.playerName, true, true);
             }
           }
 
           if (msg.type === 'match_found' && msg.seekerId === playerId) {
             if (matchSeekIntervalRef.current) clearInterval(matchSeekIntervalRef.current);
             if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
-            setupRoom(msg.roomId, msg.roleSeeker, msg.nameProposer, msg.roleSeeker === 'goat', true);
+            setupRoom(msg.roomId, msg.roleSeeker, msg.nameProposer, false, true);
           }
         } catch (e) {}
       };
@@ -948,22 +1082,59 @@ export function useWebRTCGame({
     setupRoom(roomId, role, asHost ? 'Waiting for Friend...' : 'Room Host', asHost, !asHost);
   };
 
-  const attemptManualReconnect = () => {
-    if (!currentRoomIdRef.current) return;
+  const attemptManualReconnect = async () => {
+    const roomId = currentRoomIdRef.current;
+    if (!roomId) return;
+    setConnectionHealth('reconnecting');
     setMatchStatusText('Attempting reconnect to opponent...');
 
-    if (pcRef.current) {
+    if (!navigator.onLine) {
+      setConnectionHealth('local_offline');
+      setMatchStatusText('You are currently offline. Check network connection.');
+      return;
+    }
+
+    const pc = pcRef.current;
+    if (pc) {
       try {
-        if ('restartIce' in pcRef.current) {
-          (pcRef.current as any).restartIce();
+        if ('restartIce' in pc && typeof (pc as any).restartIce === 'function') {
+          (pc as any).restartIce();
+        }
+        if (isInitiatorRef.current) {
+          const offer = await pc.createOffer({ iceRestart: true });
+          await pc.setLocalDescription(offer);
+          localOfferRef.current = offer;
+          sendTieredSignal({
+            type: 'room_ready',
+            sender: 'host',
+            playerName: playerNameRef.current,
+            offer,
+          });
+        } else {
+          sendTieredSignal({
+            type: 'guest_joined',
+            sender: 'guest',
+            playerName: playerNameRef.current,
+          });
         }
       } catch (e) {}
+    }
+
+    // If signaling was disconnected, restart fallback listeners
+    if (!doWsRef.current && !relayWsRef.current) {
+      initFallbackSignaling(roomId, isInitiatorRef.current);
     }
 
     sendPayload({
       type: 'heartbeat_ping',
       sender: isInitiatorRef.current ? 'host' : 'guest',
       timestamp: Date.now(),
+    });
+
+    sendPayload({
+      type: 'sync_ledger_req',
+      sender: isInitiatorRef.current ? 'host' : 'guest',
+      fromIndex: ledgerRef.current.chain.length,
     });
   };
 
@@ -1011,15 +1182,18 @@ export function useWebRTCGame({
     sendPayload({
       type: 'rematch_request',
       sender: isInitiatorRef.current ? 'host' : 'guest',
+      matchEpoch: currentMatchEpochRef.current,
     });
   };
 
   const acceptRematch = () => {
+    const nextEpoch = currentMatchEpochRef.current + 1;
     sendPayload({
       type: 'rematch_accept',
       sender: isInitiatorRef.current ? 'host' : 'guest',
+      matchEpoch: nextEpoch,
     });
-    handleRematchStart();
+    handleRematchStart(nextEpoch);
   };
 
   const declineRematch = () => {
@@ -1041,6 +1215,7 @@ export function useWebRTCGame({
     isOpponentDisconnected,
     disconnectSecondsLeft,
     pingLatencyMs,
+    isHighLatency,
     rematchStatus,
     ledgerChain,
     startAutoMatch,

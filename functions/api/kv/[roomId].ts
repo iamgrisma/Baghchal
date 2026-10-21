@@ -104,12 +104,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     });
   }
 
-  let payload: any = {};
+  let body: any = {};
   try {
-    payload = await context.request.json();
+    body = await context.request.json();
   } catch (e) {
-    payload = {};
+    body = {};
   }
+
+  const sender = body.sender || 'unknown';
+  const innerPayload = body.payload || body;
 
   let current = await readStore(roomId, context.env);
 
@@ -118,28 +121,42 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       roomId,
       candidatesHost: [],
       candidatesGuest: [],
+      messages: [],
       lastActive: Date.now(),
     };
   }
 
   current.lastActive = Date.now();
+  current.messages = current.messages || [];
 
-  if (payload.offer) current.offer = payload.offer;
-  if (payload.answer) current.answer = payload.answer;
-  if (payload.candidate) {
-    if (payload.sender === 'host') {
-      current.candidatesHost = current.candidatesHost || [];
-      current.candidatesHost.push(payload.candidate);
-    } else {
-      current.candidatesGuest = current.candidatesGuest || [];
-      current.candidatesGuest.push(payload.candidate);
+  // Append message for signaling polling
+  if (innerPayload && Object.keys(innerPayload).length > 0) {
+    current.messages.push({
+      sender,
+      payload: innerPayload,
+      ts: Date.now(),
+    });
+    if (current.messages.length > 40) {
+      current.messages = current.messages.slice(-40);
     }
   }
-  if (payload.gameState) {
-    current.gameState = payload.gameState;
+
+  if (innerPayload.offer) current.offer = innerPayload.offer;
+  if (innerPayload.answer) current.answer = innerPayload.answer;
+  if (innerPayload.candidate) {
+    if (sender === 'host' || innerPayload.sender === 'host') {
+      current.candidatesHost = current.candidatesHost || [];
+      current.candidatesHost.push(innerPayload.candidate);
+    } else {
+      current.candidatesGuest = current.candidatesGuest || [];
+      current.candidatesGuest.push(innerPayload.candidate);
+    }
   }
-  if (payload.players) {
-    current.players = { ...current.players, ...payload.players };
+  if (innerPayload.gameState) {
+    current.gameState = innerPayload.gameState;
+  }
+  if (innerPayload.players) {
+    current.players = { ...current.players, ...innerPayload.players };
   }
 
   await writeStore(roomId, current, context.env, 7200);

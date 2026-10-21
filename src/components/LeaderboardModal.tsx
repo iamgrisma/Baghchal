@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Trophy, X, RefreshCw, Award, Shield, Swords, Flame } from 'lucide-react';
 import { LeaderboardPlayer } from '../types';
+import { TigerIcon, GoatIcon } from './GameIcons';
 
 interface LeaderboardModalProps {
   isOpen: boolean;
@@ -172,7 +173,15 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 >
                   <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                     <span className="w-6 text-center text-xs font-black shrink-0">
-                      {isFirst ? '🥇' : isSecond ? '🥈' : isThird ? '🥉' : `#${index + 1}`}
+                      {isFirst ? (
+                        <span className="text-amber-400 font-mono font-black">#1</span>
+                      ) : isSecond ? (
+                        <span className="text-stone-300 font-mono font-black">#2</span>
+                      ) : isThird ? (
+                        <span className="text-amber-600 font-mono font-black">#3</span>
+                      ) : (
+                        `#${index + 1}`
+                      )}
                     </span>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -199,9 +208,9 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     <div className="text-xs sm:text-sm font-black font-mono text-amber-400">
                       {player.rating} pts
                     </div>
-                    <div className="text-[9px] text-stone-500 flex items-center justify-end gap-1.5 mt-0.5">
-                      <span>🐅 {player.goatsCaptured}</span>
-                      <span>🐐 {player.tigersTrapped}</span>
+                    <div className="text-[9px] text-stone-500 flex items-center justify-end gap-2 mt-0.5">
+                      <span className="inline-flex items-center gap-0.5"><TigerIcon className="w-2.5 h-2.5 text-amber-500" /> {player.goatsCaptured}</span>
+                      <span className="inline-flex items-center gap-0.5"><GoatIcon className="w-2.5 h-2.5 text-stone-300" /> {player.tigersTrapped}</span>
                     </div>
                   </div>
                 </div>

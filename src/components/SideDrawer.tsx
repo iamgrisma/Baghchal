@@ -15,7 +15,7 @@ import {
   AlertTriangle,
   Shield,
 } from 'lucide-react';
-import { BoardTheme, GameMode } from '../types';
+import { BoardTheme, BoardDimension, GameMode } from '../types';
 
 interface SideDrawerProps {
   isOpen: boolean;
@@ -29,6 +29,8 @@ interface SideDrawerProps {
   onToggleSound: () => void;
   boardTheme: BoardTheme;
   onSelectTheme: (theme: BoardTheme) => void;
+  boardDimension?: BoardDimension;
+  onSelectDimension?: (dim: BoardDimension) => void;
   onOpenRules: () => void;
   onOpenLeaderboard: () => void;
   onOpenProfile: () => void;
@@ -49,6 +51,8 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   onToggleSound,
   boardTheme,
   onSelectTheme,
+  boardDimension = '2d',
+  onSelectDimension,
   onOpenRules,
   onOpenLeaderboard,
   onOpenProfile,
@@ -185,24 +189,55 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               <span className="text-[10px] text-stone-400 font-mono">{isMuted ? 'Muted' : 'On'}</span>
             </button>
 
-            {/* Board Themes */}
+            {/* Board Themes & Dimension */}
             <div className="p-2.5 rounded-xl bg-stone-900/60 border border-stone-800 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-stone-300">
-                <Palette className="w-3.5 h-3.5 text-amber-400" />
-                <span>Board Theme</span>
+              <div className="flex items-center justify-between text-[11px] font-semibold text-stone-300">
+                <div className="flex items-center gap-1.5">
+                  <Palette className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Board Theme</span>
+                </div>
+                {onSelectDimension && (
+                  <div className="flex items-center gap-1 bg-stone-950 p-0.5 rounded-lg border border-stone-800">
+                    <button
+                      onClick={() => onSelectDimension('2d')}
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition ${
+                        boardDimension === '2d'
+                          ? 'bg-amber-500 text-stone-950 font-black shadow-sm'
+                          : 'text-stone-400 hover:text-stone-200'
+                      }`}
+                    >
+                      2D
+                    </button>
+                    <button
+                      onClick={() => onSelectDimension('3d')}
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition ${
+                        boardDimension === '3d'
+                          ? 'bg-amber-500 text-stone-950 font-black shadow-sm'
+                          : 'text-stone-400 hover:text-stone-200'
+                      }`}
+                    >
+                      3D
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-3 gap-1.5 pt-1">
-                {(['classic', 'slate', 'midnight'] as BoardTheme[]).map((theme) => (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-1">
+                {(['stone', 'cathedral3d', 'slate', 'classic', 'midnight'] as BoardTheme[]).map((theme) => (
                   <button
                     key={theme}
-                    onClick={() => onSelectTheme(theme)}
+                    onClick={() => {
+                      onSelectTheme(theme);
+                      if (theme === 'cathedral3d' && onSelectDimension) {
+                        onSelectDimension('3d');
+                      }
+                    }}
                     className={`py-1 text-[10px] font-bold rounded-lg border transition capitalize ${
                       boardTheme === theme
                         ? 'bg-amber-500 text-stone-950 border-amber-400'
                         : 'bg-stone-850 text-stone-400 border-stone-750 hover:text-stone-200'
                     }`}
                   >
-                    {theme}
+                    {theme === 'cathedral3d' ? '3D Gothic' : theme === 'stone' ? 'Stone' : theme}
                   </button>
                 ))}
               </div>

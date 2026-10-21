@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameMode, GameState, Move, PlayerRole, AIDifficulty, PlayerProfile, BoardTheme, TimerMode } from './types';
+import { GameMode, GameState, Move, PlayerRole, AIDifficulty, PlayerProfile, BoardTheme, BoardDimension, TimerMode } from './types';
 import {
   createInitialGameState,
   applyMove,
@@ -15,6 +15,7 @@ import { triggerNativeHaptic } from './utils/nativeHaptics';
 import { useWebRTCGame } from './hooks/useWebRTCGame';
 import { useMobileLifecycle } from './hooks/useMobileLifecycle';
 import { BaghchalBoard } from './components/BaghchalBoard';
+import { ThreeBaghchalBoard } from './components/ThreeBaghchalBoard';
 import { SplashScreen } from './components/SplashScreen';
 import { GameSetupScreen } from './components/GameSetupScreen';
 import { SideDrawer } from './components/SideDrawer';
@@ -25,7 +26,8 @@ import { OnlineLobbyModal } from './components/OnlineLobbyModal';
 import { GameOverModal } from './components/GameOverModal';
 import { LedgerFlyMenu } from './components/LedgerFlyMenu';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { Menu, RotateCcw, Clock } from 'lucide-react';
+import { Menu, RotateCcw, Clock, Trophy } from 'lucide-react';
+import { TigerIcon, GoatIcon } from './components/GameIcons';
 import {
   initTelegramWebApp,
   isTelegramWebApp,
@@ -47,7 +49,24 @@ export default function App() {
   const [aiUserRole, setAiUserRole] = useState<PlayerRole>('goat');
   const [difficulty, setDifficulty] = useState<AIDifficulty>('medium');
   const [profile, setProfile] = useState<PlayerProfile>(loadPlayerProfile);
-  const [boardTheme, setBoardTheme] = useState<BoardTheme>('classic');
+  const [boardTheme, setBoardTheme] = useState<BoardTheme>('stone');
+  const [boardDimension, setBoardDimension] = useState<BoardDimension>(() => {
+    try {
+      const saved = localStorage.getItem('baghchal_board_dimension');
+      return (saved as BoardDimension) || '2d';
+    } catch {
+      return '2d';
+    }
+  });
+
+  const handleSelectDimension = (dim: BoardDimension) => {
+    setBoardDimension(dim);
+    try {
+      localStorage.setItem('baghchal_board_dimension', dim);
+    } catch (e) {
+      console.warn('Storage save error:', e);
+    }
+  };
   const [timerMode, setTimerMode] = useState<TimerMode>('unlimited');
   const [turnSecondsLeft, setTurnSecondsLeft] = useState<number>(30);
   const [blitzClocks, setBlitzClocks] = useState<{ goat: number; tiger: number }>({
@@ -87,6 +106,7 @@ export default function App() {
     isOpponentDisconnected,
     disconnectSecondsLeft,
     pingLatencyMs,
+    isHighLatency,
     rematchStatus,
     ledgerChain: remoteLedgerChain,
     startAutoMatch,
@@ -191,6 +211,7 @@ export default function App() {
     onRematchAccepted: () => {
       setForfeitDetail(null);
       resetGame();
+      gameStateRef.current = createInitialGameState();
       setShowGameOverModal(false);
       sound.playGameStart();
       triggerTelegramHaptic('success');
@@ -694,6 +715,7 @@ export default function App() {
           aiUserRole={aiUserRole}
           difficulty={difficulty}
           boardTheme={boardTheme}
+          boardDimension={boardDimension}
           timerMode={timerMode}
           profile={profile}
           onSelectMode={(newMode) => {
@@ -709,6 +731,7 @@ export default function App() {
           }}
           onSelectDifficulty={(d) => setDifficulty(d)}
           onSelectTheme={(t) => setBoardTheme(t)}
+          onSelectDimension={handleSelectDimension}
           onSelectTimer={(tm) => setTimerMode(tm)}
           onStartGame={() => {
             resetGame();
@@ -751,8 +774,12 @@ export default function App() {
               : 'bg-stone-900/60 border-stone-800'
           }`}
         >
-          <div className="text-base relative">
-            {opponentRole === 'tiger' ? '🐅' : '🐐'}
+          <div className="relative flex items-center justify-center">
+            {opponentRole === 'tiger' ? (
+              <TigerIcon className="w-5 h-5 text-amber-500" />
+            ) : (
+              <GoatIcon className="w-5 h-5 text-stone-200" />
+            )}
             {isOpponentTurn && (
               <span className="absolute -top-1 -right-1 flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
@@ -808,8 +835,9 @@ export default function App() {
         {/* Center: Turn Status Guidance */}
         <div className="flex items-center">
           {gameState.status !== 'playing' ? (
-            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-amber-500 text-stone-950 shadow">
-              {gameState.status === 'goat_won' ? 'Goats Won! 🏆' : 'Tigers Won! 🏆'}
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-amber-500 text-stone-950 shadow">
+              <Trophy className="w-3.5 h-3.5 text-stone-950 inline" />
+              <span>{gameState.status === 'goat_won' ? 'Goats Won!' : 'Tigers Won!'}</span>
             </span>
           ) : isAiThinking ? (
             <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
@@ -817,24 +845,37 @@ export default function App() {
               <span>Thinking...</span>
             </span>
           ) : isUserTurn() ? (
-            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-500 text-stone-950 shadow-sm">
-              <span>{userRole === 'goat' ? '🐐 Your Turn' : '🐅 Your Turn'}</span>
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-500 text-stone-950 shadow-sm">
+              {userRole === 'goat' ? <GoatIcon className="w-3.5 h-3.5" /> : <TigerIcon className="w-3.5 h-3.5" />}
+              <span>Your Turn</span>
             </span>
           ) : (
-            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-stone-900 text-stone-400 border border-stone-800">
-              <span>{opponentRole === 'goat' ? '🐐 Opponent' : '🐅 Opponent'}</span>
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-stone-900 text-stone-400 border border-stone-800">
+              {opponentRole === 'goat' ? <GoatIcon className="w-3.5 h-3.5" /> : <TigerIcon className="w-3.5 h-3.5" />}
+              <span>Opponent</span>
             </span>
           )}
         </div>
 
-        {/* Right: Clean Hamburger Flyout Menu Toggle */}
-        <button
-          onClick={() => setShowSideMenu(true)}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center text-stone-300 hover:text-white bg-stone-900 border border-stone-800 active:bg-stone-850 transition shadow-sm"
-          title="Open Menu"
-        >
-          <Menu className="w-5 h-5 text-amber-400" />
-        </button>
+        {/* Right: Quick 2D/3D Toggle + Hamburger Flyout Menu Toggle */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => handleSelectDimension(boardDimension === '2d' ? '3d' : '2d')}
+            className="h-10 px-2.5 rounded-2xl flex items-center gap-1 bg-stone-900 border border-stone-800 hover:border-amber-500/50 text-stone-300 hover:text-amber-400 active:scale-95 transition shadow-sm"
+            title={`Switch to ${boardDimension === '2d' ? '3D' : '2D'} Board View`}
+          >
+            <span className="text-[10px] uppercase tracking-wider text-stone-400 font-medium">View</span>
+            <span className="font-mono text-amber-400 font-extrabold text-xs">{boardDimension === '2d' ? '2D' : '3D'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowSideMenu(true)}
+            className="w-10 h-10 rounded-2xl flex items-center justify-center text-stone-300 hover:text-white bg-stone-900 border border-stone-800 active:bg-stone-850 transition shadow-sm"
+            title="Open Menu"
+          >
+            <Menu className="w-5 h-5 text-amber-400" />
+          </button>
+        </div>
       </header>
 
       {/* Disconnection Warning & Countdown Banners */}
@@ -843,14 +884,19 @@ export default function App() {
           <div className="w-full max-w-lg mx-auto mb-1 flex items-center justify-between px-3 py-1.5 rounded-xl bg-red-950/80 border border-red-500/50 text-red-200 text-xs shadow-lg animate-pulse z-20">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
-              <span className="font-semibold">You are offline. Reconnecting to internet...</span>
+              <span className="font-semibold">You are offline. Reconnecting...</span>
             </div>
-            <button
-              onClick={attemptManualReconnect}
-              className="text-[11px] font-bold text-red-100 bg-red-800/80 hover:bg-red-700 px-2 py-0.5 rounded border border-red-600/50 active:scale-95 transition"
-            >
-              Retry
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="font-mono font-bold text-red-300 bg-stone-900/80 px-2 py-0.5 rounded border border-red-600/40">
+                Forfeit in {disconnectSecondsLeft}s
+              </div>
+              <button
+                onClick={attemptManualReconnect}
+                className="text-[11px] font-bold text-red-100 bg-red-800/80 hover:bg-red-700 px-2 py-0.5 rounded border border-red-600/50 active:scale-95 transition"
+              >
+                Reconnect
+              </button>
+            </div>
           </div>
         ) : isOpponentDisconnected ? (
           <div className="w-full max-w-lg mx-auto mb-1 flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-200 text-xs shadow-lg animate-pulse z-20">
@@ -866,9 +912,22 @@ export default function App() {
                 onClick={attemptManualReconnect}
                 className="text-[10px] font-bold text-amber-100 bg-amber-800/60 hover:bg-amber-700 px-1.5 py-0.5 rounded border border-amber-600/40 active:scale-95 transition"
               >
-                Check
+                Reconnect
               </button>
             </div>
+          </div>
+        ) : isHighLatency && connectionHealth === 'connected' ? (
+          <div className="w-full max-w-lg mx-auto mb-1 flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-950/70 border border-amber-600/40 text-amber-200 text-xs shadow-md z-20">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <span className="font-medium">High Network Latency ({pingLatencyMs}ms)</span>
+            </div>
+            <button
+              onClick={attemptManualReconnect}
+              className="text-[10px] font-bold text-amber-100 bg-amber-800/70 hover:bg-amber-700 px-2 py-0.5 rounded border border-amber-600/40 active:scale-95 transition"
+            >
+              Reconnect
+            </button>
           </div>
         ) : null
       )}
@@ -876,7 +935,10 @@ export default function App() {
       {/* Rematch Incoming Banner (when modal minimized) */}
       {mode === 'online' && rematchStatus === 'requested_by_opponent' && !showGameOverModal && (
         <div className="w-full max-w-lg mx-auto mb-1 flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-950/90 border border-emerald-500/60 text-emerald-100 text-xs shadow-xl animate-bounce z-20">
-          <span className="font-bold">🐅 Opponent requested a rematch!</span>
+          <div className="flex items-center gap-1.5 font-bold">
+            <TigerIcon className="w-4 h-4 text-emerald-400" />
+            <span>Opponent requested a rematch!</span>
+          </div>
           <div className="flex items-center gap-1.5">
             <button
               onClick={acceptRematch}
@@ -896,18 +958,34 @@ export default function App() {
 
       {/* 2. THE CLEAN GAME ARENA */}
       <section className="flex-1 flex items-center justify-center w-full max-w-lg mx-auto overflow-hidden p-1">
-        <BaghchalBoard
-          board={gameState.board}
-          turn={gameState.turn}
-          phase={gameState.phase}
-          goatsInReserve={gameState.goatsInReserve}
-          selectedPos={selectedPos}
-          validMoves={validMoves}
-          lastMove={gameState.lastMove}
-          isInteractive={isUserTurn()}
-          onNodeClick={handleNodeClick}
-          theme={boardTheme}
-        />
+        {boardDimension === '3d' || boardTheme === 'cathedral3d' ? (
+          <ThreeBaghchalBoard
+            board={gameState.board}
+            turn={gameState.turn}
+            phase={gameState.phase}
+            goatsInReserve={gameState.goatsInReserve}
+            selectedPos={selectedPos}
+            validMoves={validMoves}
+            lastMove={gameState.lastMove}
+            isInteractive={isUserTurn()}
+            onNodeClick={handleNodeClick}
+            isAiThinking={isAiThinking}
+            theme={boardTheme}
+          />
+        ) : (
+          <BaghchalBoard
+            board={gameState.board}
+            turn={gameState.turn}
+            phase={gameState.phase}
+            goatsInReserve={gameState.goatsInReserve}
+            selectedPos={selectedPos}
+            validMoves={validMoves}
+            lastMove={gameState.lastMove}
+            isInteractive={isUserTurn()}
+            onNodeClick={handleNodeClick}
+            theme={boardTheme}
+          />
+        )}
       </section>
 
       {/* 3. BOTTOM APP BAR: Player Card + Quick Undo Floating Button */}
@@ -919,7 +997,13 @@ export default function App() {
               : 'bg-stone-900/60 border-stone-800'
           }`}
         >
-          <div className="text-base">{userRole === 'goat' ? '🐐' : '🐅'}</div>
+          <div className="flex items-center justify-center">
+            {userRole === 'goat' ? (
+              <GoatIcon className="w-5 h-5 text-emerald-400" />
+            ) : (
+              <TigerIcon className="w-5 h-5 text-amber-400" />
+            )}
+          </div>
           <div className="flex flex-col">
             <span className="text-[11px] font-bold text-stone-200 leading-tight">
               {profile.name || 'You'} ({userRole === 'goat' ? 'Goat' : 'Tiger'})
@@ -983,6 +1067,8 @@ export default function App() {
         onToggleSound={handleToggleSound}
         boardTheme={boardTheme}
         onSelectTheme={(t) => setBoardTheme(t)}
+        boardDimension={boardDimension}
+        onSelectDimension={handleSelectDimension}
         onOpenRules={() => setShowRules(true)}
         onOpenLeaderboard={() => setShowLeaderboard(true)}
         onOpenProfile={() => setShowProfile(true)}

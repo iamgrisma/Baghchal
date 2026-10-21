@@ -12,7 +12,9 @@ export type GamePhase = 'placement' | 'movement';
 
 export type GameStatus = 'playing' | 'tiger_won' | 'goat_won' | 'draw';
 
-export type BoardTheme = 'classic' | 'slate' | 'midnight';
+export type BoardTheme = 'classic' | 'slate' | 'stone' | 'midnight' | 'cathedral3d';
+
+export type BoardDimension = '2d' | '3d';
 
 export type TimerMode = 'unlimited' | 'turn30s' | 'blitz5m';
 

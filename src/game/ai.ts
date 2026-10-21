@@ -37,7 +37,7 @@ export function getAdaptiveAIDetails(profile?: PlayerProfile): AdaptiveAIDetails
       aiWins: 0,
       playerWins: 0,
       recentForm: [],
-      tierLabel: 'Medium ⚖️',
+      tierLabel: 'Medium (Balanced)',
       statusBadge: 'Calibrating',
       description: 'Initial calibration: AI starts at balanced Medium and tunes to your results.',
     };
@@ -54,7 +54,7 @@ export function getAdaptiveAIDetails(profile?: PlayerProfile): AdaptiveAIDetails
       aiWins: 0,
       playerWins: 0,
       recentForm: [],
-      tierLabel: 'Medium ⚖️',
+      tierLabel: 'Medium (Balanced)',
       statusBadge: 'Calibrating',
       description: 'Initial calibration: AI starts at balanced Medium and tunes to your results.',
     };
@@ -81,7 +81,7 @@ export function getAdaptiveAIDetails(profile?: PlayerProfile): AdaptiveAIDetails
   }
 
   let effectiveDifficulty: 'easy' | 'medium' | 'hard' = 'medium';
-  let tierLabel = 'Medium ⚖️';
+  let tierLabel = 'Medium (Balanced)';
   let statusBadge = 'Balanced';
   let description = '';
 
@@ -91,7 +91,7 @@ export function getAdaptiveAIDetails(profile?: PlayerProfile): AdaptiveAIDetails
     (recent.length >= 3 && recentWinRate >= 65)
   ) {
     effectiveDifficulty = 'hard';
-    tierLabel = 'Hard ⚡';
+    tierLabel = 'Hard (Mastery)';
     statusBadge = 'Mastery Surge';
     description = `Win rate: ${winRate}% (${playerWins}W - ${aiWins}L). AI dialed up to Hard with deep lookahead to challenge your mastery!`;
   } else if (
@@ -100,12 +100,12 @@ export function getAdaptiveAIDetails(profile?: PlayerProfile): AdaptiveAIDetails
     (recent.length >= 3 && recentWinRate <= 25)
   ) {
     effectiveDifficulty = 'easy';
-    tierLabel = 'Easy 🛡️';
+    tierLabel = 'Easy (Casual)';
     statusBadge = 'Adaptive Relief';
     description = `Win rate: ${winRate}% (${playerWins}W - ${aiWins}L). AI dialed down to Easy to provide space to develop counter-strategies.`;
   } else {
     effectiveDifficulty = 'medium';
-    tierLabel = 'Medium ⚖️';
+    tierLabel = 'Medium (Balanced)';
     statusBadge = 'Dynamic Equilibrium';
     description = `Win rate: ${winRate}% (${playerWins}W - ${aiWins}L). AI maintaining Medium difficulty for a balanced, competitive match.`;
   }

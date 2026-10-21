@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, ShieldCheck, History, ChevronDown, ChevronUp, Copy, Check, Clock } from 'lucide-react';
 import { LedgerBlock } from '../game/ledger';
+import { TigerIcon, GoatIcon } from './GameIcons';
 
 interface LedgerFlyMenuProps {
   isOpen: boolean;
@@ -61,8 +62,9 @@ export const LedgerFlyMenu: React.FC<LedgerFlyMenuProps> = ({ isOpen, onClose, c
           <span className="text-stone-400">
             Total Moves: <strong className="font-mono text-stone-100">{chain.length}</strong>
           </span>
-          <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-800/50 px-2 py-0.5 rounded-full">
-            All Moves Verified ✓
+          <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-800/50 px-2 py-0.5 rounded-full flex items-center gap-1">
+            <Check className="w-3 h-3" />
+            <span>All Moves Verified</span>
           </span>
         </div>
 
@@ -86,7 +88,9 @@ export const LedgerFlyMenu: React.FC<LedgerFlyMenuProps> = ({ isOpen, onClose, c
                   {/* Primary Narrative Row */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-base">{isGoat ? '🐐' : '🐅'}</span>
+                      <div className="w-6 h-6 rounded-lg bg-stone-950 flex items-center justify-center border border-stone-800">
+                        {isGoat ? <GoatIcon className="w-4 h-4 text-stone-200" /> : <TigerIcon className="w-4 h-4 text-amber-500" />}
+                      </div>
                       <div className="flex flex-col">
                         <span className="text-xs font-bold text-stone-200">
                           Move #{block.index + 1} · {isGoat ? `Goat ${block.pieceId}` : `Tiger ${block.pieceId}`}
@@ -98,8 +102,9 @@ export const LedgerFlyMenu: React.FC<LedgerFlyMenuProps> = ({ isOpen, onClose, c
                       </div>
                     </div>
 
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/30 border border-emerald-800/40 px-2 py-0.5 rounded">
-                      Verified ✓
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/30 border border-emerald-800/40 px-2 py-0.5 rounded flex items-center gap-1">
+                      <Check className="w-2.5 h-2.5" />
+                      <span>Verified</span>
                     </span>
                   </div>
 

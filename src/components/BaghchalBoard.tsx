@@ -25,6 +25,7 @@ interface ThemeConfig {
   studColor: string;
   studRing: string;
   accentGlow: string;
+  isEngravedStone?: boolean;
 }
 
 const THEME_STYLES: Record<BoardTheme, ThemeConfig> = {
@@ -38,6 +39,7 @@ const THEME_STYLES: Record<BoardTheme, ThemeConfig> = {
     studColor: '#d97706',
     studRing: '#78350f',
     accentGlow: '#f59e0b',
+    isEngravedStone: false,
   },
   slate: {
     frameOuter: '#090d16',
@@ -49,6 +51,19 @@ const THEME_STYLES: Record<BoardTheme, ThemeConfig> = {
     studColor: '#0ea5e9',
     studRing: '#0369a1',
     accentGlow: '#38bdf8',
+    isEngravedStone: true,
+  },
+  stone: {
+    frameOuter: '#181a20',
+    frameInner: '#252932',
+    boardSurface: '#1c1f26',
+    grooveDark: '#08090d',
+    brassLine: '#cbd5e1',
+    brassLineBorder: '#475569',
+    studColor: '#64748b',
+    studRing: '#1e2430',
+    accentGlow: '#f59e0b',
+    isEngravedStone: true,
   },
   midnight: {
     frameOuter: '#090514',
@@ -60,6 +75,19 @@ const THEME_STYLES: Record<BoardTheme, ThemeConfig> = {
     studColor: '#a855f7',
     studRing: '#6b21a8',
     accentGlow: '#c084fc',
+    isEngravedStone: false,
+  },
+  cathedral3d: {
+    frameOuter: '#090a0f',
+    frameInner: '#1e202a',
+    boardSurface: '#14151e',
+    grooveDark: '#050608',
+    brassLine: '#d0bcff',
+    brassLineBorder: '#4f378b',
+    studColor: '#6b21a8',
+    studRing: '#2e1065',
+    accentGlow: '#d0bcff',
+    isEngravedStone: true,
   },
 };
 
@@ -200,9 +228,28 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             />
           ))}
 
-          {/* 2. RECESSED CARVED GROOVES */}
-          <g stroke={currentTheme.grooveDark} strokeWidth="5.5" strokeLinecap="round">
-            <rect x={PADDING} y={PADDING} width={SIZE - 2 * PADDING} height={SIZE - 2 * PADDING} fill="none" />
+          {/* 2. ENGRAVED CHISELED BEVEL HIGHLIGHT (Stone & Slate incision depth) */}
+          {currentTheme.isEngravedStone && (
+            <g stroke="rgba(255, 255, 255, 0.32)" strokeWidth="4.5" strokeLinecap="round" transform="translate(-1.2, -1.2)">
+              <rect x={PADDING} y={PADDING} width={SIZE - 2 * PADDING} height={SIZE - 2 * PADDING} fill="none" strokeWidth="4.8" />
+              {[1, 2, 3].map((r) => (
+                <line key={`beh-${r}`} x1={PADDING} y1={PADDING + r * STEP} x2={SIZE - PADDING} y2={PADDING + r * STEP} />
+              ))}
+              {[1, 2, 3].map((c) => (
+                <line key={`bev-${c}`} x1={PADDING + c * STEP} y1={PADDING} x2={PADDING + c * STEP} y2={SIZE - PADDING} />
+              ))}
+              <line x1={PADDING} y1={PADDING} x2={SIZE - PADDING} y2={SIZE - PADDING} />
+              <line x1={SIZE - PADDING} y1={PADDING} x2={PADDING} y2={SIZE - PADDING} />
+              <line x1={PADDING + 2 * STEP} y1={PADDING} x2={PADDING} y2={PADDING + 2 * STEP} />
+              <line x1={PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={SIZE - PADDING} />
+              <line x1={PADDING + 2 * STEP} y1={SIZE - PADDING} x2={SIZE - PADDING} y2={PADDING + 2 * STEP} />
+              <line x1={SIZE - PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={PADDING} />
+            </g>
+          )}
+
+          {/* 3. RECESSED CARVED GROOVES & SHADOW TRENCH */}
+          <g stroke={currentTheme.grooveDark} strokeWidth={currentTheme.isEngravedStone ? '6.5' : '5.5'} strokeLinecap="round">
+            <rect x={PADDING} y={PADDING} width={SIZE - 2 * PADDING} height={SIZE - 2 * PADDING} fill="none" strokeWidth={currentTheme.isEngravedStone ? '7' : '5.5'} />
             {[1, 2, 3].map((r) => (
               <line key={`gh-${r}`} x1={PADDING} y1={PADDING + r * STEP} x2={SIZE - PADDING} y2={PADDING + r * STEP} />
             ))}
@@ -217,9 +264,9 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
             <line x1={SIZE - PADDING} y1={PADDING + 2 * STEP} x2={PADDING + 2 * STEP} y2={PADDING} />
           </g>
 
-          {/* 3. POLISHED INLAID BRASS CHANNELS */}
-          <g stroke={currentTheme.brassLine} strokeWidth="2.8" strokeLinecap="round">
-            <rect x={PADDING} y={PADDING} width={SIZE - 2 * PADDING} height={SIZE - 2 * PADDING} fill="none" strokeWidth="3.6" />
+          {/* 4. POLISHED INLAID BRASS / CHISELED STONE CHANNELS */}
+          <g stroke={currentTheme.brassLine} strokeWidth={currentTheme.isEngravedStone ? '2.4' : '2.8'} strokeLinecap="round" opacity={currentTheme.isEngravedStone ? 0.92 : 1}>
+            <rect x={PADDING} y={PADDING} width={SIZE - 2 * PADDING} height={SIZE - 2 * PADDING} fill="none" strokeWidth={currentTheme.isEngravedStone ? '3' : '3.6'} />
             {[1, 2, 3].map((r) => (
               <line key={`h-${r}`} x1={PADDING} y1={PADDING + r * STEP} x2={SIZE - PADDING} y2={PADDING + r * STEP} />
             ))}
@@ -266,9 +313,19 @@ export const BaghchalBoard: React.FC<BaghchalBoardProps> = ({
                 }}
                 className={isInteractive ? 'cursor-pointer select-none touch-none' : 'select-none touch-none'}
               >
-                {/* Brass Rivet Stud */}
-                <circle cx={pos.x} cy={pos.y} r="5" fill={currentTheme.studColor} stroke={currentTheme.studRing} strokeWidth="1.6" />
-                <circle cx={pos.x - 1.2} cy={pos.y - 1.2} r="1.5" fill="#ffffff" opacity="0.6" />
+                {/* Stud / Carved Stone Socket */}
+                {currentTheme.isEngravedStone ? (
+                  <g>
+                    <circle cx={pos.x} cy={pos.y} r="7.5" fill="#0b0d12" stroke="#1f242e" strokeWidth="1.4" />
+                    <circle cx={pos.x} cy={pos.y} r="4.8" fill={currentTheme.studColor} stroke={currentTheme.studRing} strokeWidth="1.2" />
+                    <circle cx={pos.x - 1.4} cy={pos.y - 1.4} r="1.4" fill="#ffffff" opacity="0.45" />
+                  </g>
+                ) : (
+                  <g>
+                    <circle cx={pos.x} cy={pos.y} r="5" fill={currentTheme.studColor} stroke={currentTheme.studRing} strokeWidth="1.6" />
+                    <circle cx={pos.x - 1.2} cy={pos.y - 1.2} r="1.5" fill="#ffffff" opacity="0.6" />
+                  </g>
+                )}
 
                 {/* Tactical Beacon for valid placements/moves - Uniform neutral indicator without giving away kills */}
                 {isTarget && (

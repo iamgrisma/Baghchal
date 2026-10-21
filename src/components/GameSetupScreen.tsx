@@ -15,7 +15,7 @@ import {
   Flame,
   Award,
 } from 'lucide-react';
-import { AIDifficulty, BoardTheme, GameMode, PlayerProfile, PlayerRole, TimerMode } from '../types';
+import { AIDifficulty, BoardTheme, BoardDimension, GameMode, PlayerProfile, PlayerRole, TimerMode } from '../types';
 import { getAdaptiveAIDetails } from '../game/ai';
 import { TigerIcon, GoatIcon } from './GameIcons';
 
@@ -24,12 +24,14 @@ interface GameSetupScreenProps {
   aiUserRole: PlayerRole;
   difficulty: AIDifficulty;
   boardTheme: BoardTheme;
+  boardDimension?: BoardDimension;
   timerMode: TimerMode;
   profile?: PlayerProfile;
   onSelectMode: (mode: GameMode) => void;
   onSelectAIRole: (role: PlayerRole) => void;
   onSelectDifficulty: (difficulty: AIDifficulty) => void;
   onSelectTheme: (theme: BoardTheme) => void;
+  onSelectDimension?: (dim: BoardDimension) => void;
   onSelectTimer: (timer: TimerMode) => void;
   onStartGame: () => void;
   onBackToSplash: () => void;
@@ -41,12 +43,14 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
   aiUserRole,
   difficulty,
   boardTheme,
+  boardDimension = '2d',
   timerMode,
   profile,
   onSelectMode,
   onSelectAIRole,
   onSelectDifficulty,
   onSelectTheme,
+  onSelectDimension,
   onSelectTimer,
   onStartGame,
   onBackToSplash,
@@ -143,11 +147,11 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
           </div>
         </section>
 
-        {/* Section 2: Faction Selection Cards */}
-        {mode !== 'local' && (
+        {/* Section 2: Faction Selection Cards (vs AI) or Online Matchmaking Info */}
+        {mode === 'ai' && (
           <section className="space-y-2 animate-fade-in">
             <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 px-0.5">
-              Player Faction
+              Player Faction (VS AI)
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">
@@ -212,6 +216,23 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
                 <div className="font-bold text-xs text-stone-100">Tiger Faction</div>
                 <div className="text-[11px] text-stone-400 mt-0.5">4 Tigers · Hunt 5 Goats</div>
               </button>
+            </div>
+          </section>
+        )}
+
+        {mode === 'online' && (
+          <section className="space-y-2 animate-fade-in">
+            <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 px-0.5">
+              Online Matchmaking
+            </div>
+            <div className="p-3.5 rounded-2xl bg-stone-900/80 border border-amber-600/30 text-xs space-y-1">
+              <div className="flex items-center gap-2 font-bold text-amber-300">
+                <Globe className="w-4 h-4 text-amber-400" />
+                <span>Instant Global Matchmaking</span>
+              </div>
+              <p className="text-[11px] text-stone-300 leading-snug">
+                Random faction assignment is set as default for the fastest matchmaking queue, or create a private room to invite a friend on Telegram.
+              </p>
             </div>
           </section>
         )}
@@ -302,16 +323,44 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
           </div>
         </section>
 
-        {/* Section 5: Board Theme Cards */}
-        <section className="space-y-2">
-          <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 px-0.5">
-            Board Theme
+        {/* Section 5: Board Theme & Dimension */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-stone-400 px-0.5">
+            <span>Board Theme</span>
+            {onSelectDimension && (
+              <div className="flex items-center gap-1 bg-stone-900 p-0.5 rounded-lg border border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => onSelectDimension('2d')}
+                  className={`px-2 py-0.5 text-[11px] font-bold rounded-md transition ${
+                    boardDimension === '2d'
+                      ? 'bg-amber-500 text-stone-950 shadow-sm'
+                      : 'text-stone-400 hover:text-stone-200'
+                  }`}
+                >
+                  2D
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectDimension('3d')}
+                  className={`px-2 py-0.5 text-[11px] font-bold rounded-md transition ${
+                    boardDimension === '3d'
+                      ? 'bg-amber-500 text-stone-950 shadow-sm'
+                      : 'text-stone-400 hover:text-stone-200'
+                  }`}
+                >
+                  3D
+                </button>
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[
-              { id: 'classic', label: 'Woodland', color: 'bg-amber-500', border: 'border-amber-500' },
+              { id: 'stone', label: 'Stone (Engraved)', color: 'bg-stone-300', border: 'border-stone-400' },
+              { id: 'cathedral3d', label: 'Cathedral 3D', color: 'bg-violet-400', border: 'border-violet-500' },
               { id: 'slate', label: 'Highland', color: 'bg-cyan-400', border: 'border-cyan-400' },
+              { id: 'classic', label: 'Woodland', color: 'bg-amber-500', border: 'border-amber-500' },
               { id: 'midnight', label: 'Obsidian', color: 'bg-purple-400', border: 'border-purple-400' },
             ].map(({ id, label, color, border }) => {
               const isSelected = boardTheme === id;
@@ -319,7 +368,12 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
                 <button
                   key={id}
                   type="button"
-                  onClick={() => onSelectTheme(id as BoardTheme)}
+                  onClick={() => {
+                    onSelectTheme(id as BoardTheme);
+                    if (id === 'cathedral3d' && onSelectDimension) {
+                      onSelectDimension('3d');
+                    }
+                  }}
                   className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border text-xs transition ${
                     isSelected
                       ? `bg-stone-900 ${border} text-stone-100 ring-1 ${border}/50`
@@ -327,7 +381,7 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
                   }`}
                 >
                   <div className={`w-3.5 h-3.5 rounded-full ${color} mb-1 shadow-sm`} />
-                  <span className="font-semibold text-stone-200">{label}</span>
+                  <span className="font-semibold text-stone-200 text-center leading-tight text-[11px]">{label}</span>
                 </button>
               );
             })}
