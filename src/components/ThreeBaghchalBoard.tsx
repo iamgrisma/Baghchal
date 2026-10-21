@@ -173,8 +173,8 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
         const mesh = pieceMeshesRef.current[idx];
         if (mesh && !mesh.userData.isAnimating) {
           const isSelected = propsRef.current.selectedPos === idx;
-          const basePosY = isSelected ? 0.42 : 0.08;
-          mesh.position.y = basePosY + Math.sin(t + i * 0.6) * 0.025;
+          const basePosY = isSelected ? 0.52 : 0.18;
+          mesh.position.y = basePosY + Math.sin(t + i * 0.6) * 0.02;
         }
       });
 
@@ -239,7 +239,7 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
         const wz = (r - 2) * 1.8;
         const isSelected = selectedPos === idx;
 
-        mesh.position.set(wx, isSelected ? 0.42 : 0.08, wz);
+        mesh.position.set(wx, isSelected ? 0.52 : 0.18, wz);
         mesh.userData = { nodeIndex: idx, pieceType };
         scene.add(mesh);
         pieceMeshesRef.current[idx] = mesh;
@@ -263,7 +263,7 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
       const ring = new THREE.Mesh(ringGeo, ringMat);
       const r = Math.floor(vm.to / 5);
       const c = vm.to % 5;
-      ring.position.set((c - 2) * 1.8, 0.12, (r - 2) * 1.8);
+      ring.position.set((c - 2) * 1.8, 0.19, (r - 2) * 1.8);
       ring.userData = { nodeIndex: vm.to };
       scene.add(ring);
       highlightsRef.current.push(ring);
@@ -281,7 +281,7 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
       );
       const r = Math.floor(selectedPos / 5);
       const c = selectedPos % 5;
-      selRing.position.set((c - 2) * 1.8, 0.13, (r - 2) * 1.8);
+      selRing.position.set((c - 2) * 1.8, 0.195, (r - 2) * 1.8);
       selRing.userData = { nodeIndex: selectedPos };
       scene.add(selRing);
       highlightsRef.current.push(selRing);
@@ -299,8 +299,8 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
       const tr = Math.floor(lastMove.to / 5);
       const tc = lastMove.to % 5;
 
-      const p1 = new THREE.Vector3((fc - 2) * 1.8, 0.14, (fr - 2) * 1.8);
-      const p2 = new THREE.Vector3((tc - 2) * 1.8, 0.14, (tr - 2) * 1.8);
+      const p1 = new THREE.Vector3((fc - 2) * 1.8, 0.20, (fr - 2) * 1.8);
+      const p2 = new THREE.Vector3((tc - 2) * 1.8, 0.20, (tr - 2) * 1.8);
 
       const trailGeo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
       const trailMat = new THREE.LineDashedMaterial({
@@ -746,35 +746,36 @@ function buildEnvironment(scene: THREE.Scene, theme: BoardTheme): () => void {
     });
   } else {
     // Ancient Himalayan Stone Sanctuary (Default & Stone/Slate/Classic/Midnight)
-    const ambientLight = new THREE.AmbientLight(theme === 'classic' ? 0x3d2b1f : 0x1e2430, 1.8);
+    const ambientLight = new THREE.AmbientLight(theme === 'classic' ? 0x3d2b1f : 0x1e2430, 1.2);
     scene.add(ambientLight);
     disposables.push(ambientLight);
 
-    // Warm Sunlit Directional Light
-    const dirLight = new THREE.DirectionalLight(theme === 'classic' ? 0xfef3c7 : 0xfff7ed, 2.4);
-    dirLight.position.set(12, 22, 12);
+    // Warm Sunlit Directional Key Light (Casts crisp real-time shadows)
+    const dirLight = new THREE.DirectionalLight(theme === 'classic' ? 0xfef3c7 : 0xfff7ed, 2.2);
+    dirLight.position.set(10, 18, 9);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
+    dirLight.shadow.bias = -0.0005;
     scene.add(dirLight);
     disposables.push(dirLight);
 
-    // Himalayan Sky Bounce Light
-    const skyLight = new THREE.PointLight(theme === 'slate' ? 0x38bdf8 : theme === 'midnight' ? 0xa855f7 : 0x60a5fa, 2.0, 35);
-    skyLight.position.set(-14, 10, -10);
-    scene.add(skyLight);
-    disposables.push(skyLight);
+    // Subtle Rim & Fill Light (Highlights contours from opposite side)
+    const rimLight = new THREE.DirectionalLight(theme === 'slate' ? 0x38bdf8 : 0x64748b, 1.1);
+    rimLight.position.set(-10, 12, -10);
+    scene.add(rimLight);
+    disposables.push(rimLight);
 
-    // Ground Courtyard Bounce Light
-    const warmBounce = new THREE.PointLight(0xf59e0b, 1.6, 35);
-    warmBounce.position.set(14, 8, 10);
+    // Warm Ground Courtyard Bounce
+    const warmBounce = new THREE.PointLight(0xf59e0b, 1.2, 30);
+    warmBounce.position.set(12, 6, 8);
     scene.add(warmBounce);
     disposables.push(warmBounce);
 
     // Solid Granite Altar Pedestal
     const altarColor = theme === 'classic' ? 0x2b1d16 : 0x161820;
     const altarMat = new THREE.MeshStandardMaterial({ color: altarColor, roughness: 0.85, metalness: 0.1 });
-    const altar = new THREE.Mesh(new THREE.BoxGeometry(10.2, 0.8, 10.2), altarMat);
+    const altar = new THREE.Mesh(new THREE.BoxGeometry(10.4, 0.8, 10.4), altarMat);
     altar.position.y = -0.5;
     altar.castShadow = true;
     altar.receiveShadow = true;
@@ -805,7 +806,7 @@ function buildEnvironment(scene: THREE.Scene, theme: BoardTheme): () => void {
   };
 }
 
-/* --- 3D BAGHCHAL BOARD WITH ENGRAVED CHISELED STONE SLAB --- */
+/* --- 3D BAGHCHAL BOARD WITH PHYSICAL CHISELED ENGRAVED LINES --- */
 
 function buildBaghchalBoard3D(
   scene: THREE.Scene,
@@ -813,80 +814,163 @@ function buildBaghchalBoard3D(
 ): { textures: { diffuse: THREE.CanvasTexture; bump: THREE.CanvasTexture }; cleanup: () => void } {
   const disposables: THREE.Object3D[] = [];
 
-  // 1. Generate High-Res Procedural Diffuse & Bump Textures
+  // 1. Generate High-Res Procedural Diffuse & Bump Textures for Stone Micro-Grain
   const textures = generateStoneBoardTextures(theme);
 
-  // 2. Heavy Stone Board Base Slab (Dark Granite / Slate rim)
-  const slabGeo = new THREE.BoxGeometry(9.1, 0.35, 9.1);
-  const slabColor = theme === 'classic' ? 0x1b110b : 0x14171e;
-  const slabMat = new THREE.MeshStandardMaterial({ color: slabColor, roughness: 0.75, metalness: 0.2 });
-  const slabMesh = new THREE.Mesh(slabGeo, slabMat);
-  slabMesh.position.y = -0.08;
-  slabMesh.receiveShadow = true;
-  scene.add(slabMesh);
-  disposables.push(slabMesh);
+  // 2. Heavy Tiered Stone Board Base Slab (Himalayan Black Slate Plinth)
+  const baseSlabGeo = new THREE.BoxGeometry(9.6, 0.38, 9.6);
+  const baseSlabMat = new THREE.MeshStandardMaterial({
+    color: theme === 'classic' ? 0x1b110b : 0x13151b,
+    roughness: 0.82,
+    metalness: 0.2,
+  });
+  const baseSlab = new THREE.Mesh(baseSlabGeo, baseSlabMat);
+  baseSlab.position.y = -0.02;
+  baseSlab.receiveShadow = true;
+  scene.add(baseSlab);
+  disposables.push(baseSlab);
 
-  // 3. Top Face: Bump-Mapped Engraved Chiseled Stone Plate
-  const plateGeo = new THREE.PlaneGeometry(9.0, 9.0);
+  // Top Face Stone Playing Slab (Top surface at y = 0.18)
+  const plateGeo = new THREE.BoxGeometry(9.1, 0.18, 9.1);
   const plateMat = new THREE.MeshStandardMaterial({
     map: textures.diffuse,
     bumpMap: textures.bump,
-    bumpScale: theme === 'stone' || theme === 'slate' ? 0.22 : 0.14,
-    roughness: theme === 'stone' ? 0.68 : 0.45,
-    metalness: theme === 'cathedral3d' || theme === 'classic' ? 0.35 : 0.15,
+    bumpScale: 0.18,
+    roughness: 0.62,
+    metalness: 0.22,
   });
   const plateMesh = new THREE.Mesh(plateGeo, plateMat);
-  plateMesh.rotation.x = -Math.PI / 2;
-  plateMesh.position.y = 0.098;
+  plateMesh.position.y = 0.09;
   plateMesh.receiveShadow = true;
   scene.add(plateMesh);
   disposables.push(plateMesh);
 
-  // 4. Inset Chiseled Edge Border Trim
-  const trimGeo = new THREE.BoxGeometry(9.16, 0.06, 9.16);
-  const trimColor = theme === 'classic' ? 0xb45309 : theme === 'cathedral3d' ? 0x4f378b : 0x334155;
-  const trimMat = new THREE.MeshStandardMaterial({ color: trimColor, roughness: 0.4, metalness: 0.6 });
-  const trimMesh = new THREE.Mesh(trimGeo, trimMat);
-  trimMesh.position.y = 0.085;
-  scene.add(trimMesh);
-  disposables.push(trimMesh);
-
-  // 5. 25 Intersection Sockets & Hit Targets
-  const socketGeo = new THREE.CylinderGeometry(0.24, 0.22, 0.04, 24);
-  const socketMat = new THREE.MeshStandardMaterial({
-    color: theme === 'stone' ? 0x252a35 : theme === 'cathedral3d' ? 0x3b1d60 : 0x1e293b,
-    roughness: 0.8,
-    metalness: 0.2,
+  // Ornamental Chiseled Corner Brackets
+  const bracketMat = new THREE.MeshStandardMaterial({
+    color: theme === 'classic' ? 0xb45309 : theme === 'cathedral3d' ? 0x6b21a8 : 0x334155,
+    roughness: 0.35,
+    metalness: 0.7,
+  });
+  [-4.35, 4.35].forEach((cx) => {
+    [-4.35, 4.35].forEach((cz) => {
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.42), bracketMat);
+      bracket.position.set(cx, 0.11, cz);
+      scene.add(bracket);
+      disposables.push(bracket);
+    });
   });
 
-  const innerPitGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.05, 16);
-  const innerPitMat = new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.95 });
+  // 3. PHYSICAL 3D ENGRAVED INLAID LINES (100% visible, sharp, authentic chisel glint)
+  const lineInlayColor =
+    theme === 'classic'
+      ? 0xf59e0b
+      : theme === 'cathedral3d'
+      ? 0xd0bcff
+      : theme === 'slate'
+      ? 0x38bdf8
+      : theme === 'midnight'
+      ? 0xc084fc
+      : 0xf59e0b; // Gilded antique brass on Himalayan stone
 
-  // Generous invisible hit-sphere for mobile touch detection
+  const trenchMat = new THREE.MeshStandardMaterial({
+    color: 0x06070a, // Deep dark carved shadow trench
+    roughness: 0.95,
+    metalness: 0.1,
+  });
+
+  const inlayMat = new THREE.MeshStandardMaterial({
+    color: lineInlayColor,
+    roughness: 0.24,
+    metalness: 0.85,
+    emissive: lineInlayColor,
+    emissiveIntensity: 0.28,
+  });
+
+  // Grid coordinates: 5x5, spacing 1.8 units, bounds [-3.6, +3.6]
+  const lineSegments: { p1: [number, number]; p2: [number, number] }[] = [];
+
+  // 5 Horizontals
+  for (let i = 0; i < 5; i++) {
+    const z = (i - 2) * 1.8;
+    lineSegments.push({ p1: [-3.6, z], p2: [3.6, z] });
+  }
+
+  // 5 Verticals
+  for (let i = 0; i < 5; i++) {
+    const x = (i - 2) * 1.8;
+    lineSegments.push({ p1: [x, -3.6], p2: [x, 3.6] });
+  }
+
+  // 2 Main Diagonals
+  lineSegments.push({ p1: [-3.6, -3.6], p2: [3.6, 3.6] });
+  lineSegments.push({ p1: [3.6, -3.6], p2: [-3.6, 3.6] });
+
+  // 4 Diamond Edges
+  lineSegments.push({ p1: [0, -3.6], p2: [3.6, 0] });
+  lineSegments.push({ p1: [3.6, 0], p2: [0, 3.6] });
+  lineSegments.push({ p1: [0, 3.6], p2: [-3.6, 0] });
+  lineSegments.push({ p1: [-3.6, 0], p2: [0, -3.6] });
+
+  lineSegments.forEach(({ p1, p2 }) => {
+    const [x1, z1] = p1;
+    const [x2, z2] = p2;
+    const dx = x2 - x1;
+    const dz = z2 - z1;
+    const length = Math.hypot(dx, dz);
+    const midX = (x1 + x2) / 2;
+    const midZ = (z1 + z2) / 2;
+    const angle = Math.atan2(dx, dz);
+
+    // A. Recessed dark chiseled trench
+    const trench = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.02, length), trenchMat);
+    trench.position.set(midX, 0.174, midZ);
+    trench.rotation.y = angle;
+    scene.add(trench);
+    disposables.push(trench);
+
+    // B. Gleaming physical inlaid metallic line ribbon
+    const inlay = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.025, length), inlayMat);
+    inlay.position.set(midX, 0.178, midZ);
+    inlay.rotation.y = angle;
+    scene.add(inlay);
+    disposables.push(inlay);
+  });
+
+  // 4. 25 INTERSECTION CARVED STONE SOCKETS & HIT TARGETS
+  const socketRingMat = new THREE.MeshStandardMaterial({
+    color: lineInlayColor,
+    roughness: 0.3,
+    metalness: 0.8,
+  });
+  const socketCupMat = new THREE.MeshStandardMaterial({
+    color: 0x090b10,
+    roughness: 0.9,
+    metalness: 0.1,
+  });
   const hitGeo = new THREE.SphereGeometry(0.72, 8, 8);
   const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
 
   for (let r = 0; r < 5; r++) {
     for (let c = 0; c < 5; c++) {
       const index = r * 5 + c;
-      const pos = new THREE.Vector3((c - 2) * 1.8, 0.1, (r - 2) * 1.8);
+      const pos = new THREE.Vector3((c - 2) * 1.8, 0.179, (r - 2) * 1.8);
 
-      // Carved socket cup
-      const socket = new THREE.Mesh(socketGeo, socketMat);
-      socket.position.copy(pos);
-      socket.userData = { nodeIndex: index };
-      scene.add(socket);
-      disposables.push(socket);
+      // Outer metallic beveled socket collar ring
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.02, 20), socketRingMat);
+      ring.position.copy(pos);
+      ring.userData = { nodeIndex: index };
+      scene.add(ring);
+      disposables.push(ring);
 
-      // Deep dark pit center
-      const innerPit = new THREE.Mesh(innerPitGeo, innerPitMat);
-      innerPit.position.set(pos.x, pos.y + 0.005, pos.z);
-      scene.add(innerPit);
-      disposables.push(innerPit);
+      // Inner sunken dark socket pit where pieces rest
+      const pit = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.025, 16), socketCupMat);
+      pit.position.set(pos.x, pos.y + 0.005, pos.z);
+      scene.add(pit);
+      disposables.push(pit);
 
       // Mobile Touch Hit Target
       const hitMesh = new THREE.Mesh(hitGeo, hitMat);
-      hitMesh.position.copy(pos);
+      hitMesh.position.set(pos.x, 0.20, pos.z);
       hitMesh.userData = { nodeIndex: index };
       scene.add(hitMesh);
       disposables.push(hitMesh);
@@ -908,118 +992,398 @@ function buildBaghchalBoard3D(
   return { textures, cleanup };
 }
 
-/* --- SCULPTED 3D STONE GAME PIECES --- */
+/* --- SCULPTED ROYAL BENGAL TIGER (Fierce Predator Figurine) --- */
 
 function createTigerMesh(isTrapped = false, theme: BoardTheme = 'stone') {
   const group = new THREE.Group();
 
-  // Tiger Material: Dark Volcanic Basalt / Chiseled Granite
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color: theme === 'classic' ? 0x2e1808 : 0x14161b,
-    roughness: 0.42,
-    metalness: theme === 'cathedral3d' ? 0.75 : 0.28,
+  // Materials: Deep Burnished Bronze / Antique Copper & Volcanic Basalt
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0x181a20,
+    roughness: 0.4,
+    metalness: 0.35,
   });
-
-  // Chiseled Pedestal Base
-  const baseGeo = new THREE.CylinderGeometry(0.48, 0.52, 0.12, 16);
-  const baseMesh = new THREE.Mesh(baseGeo, bodyMat);
-  baseMesh.position.y = 0.06;
-  baseMesh.castShadow = true;
-  group.add(baseMesh);
-
-  // Powerful geometric predator torso
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.48, 1.02), bodyMat);
-  body.position.y = 0.34;
-  body.castShadow = true;
-  group.add(body);
-
-  // Chiseled feline head with alert contour
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.42, 0.52), bodyMat);
-  head.position.set(0, 0.62, 0.5);
-  head.castShadow = true;
-  group.add(head);
-
-  // Alert ears
-  const earGeo = new THREE.ConeGeometry(0.12, 0.24, 4);
-  earGeo.rotateY(Math.PI / 4);
-  const ear1 = new THREE.Mesh(earGeo, bodyMat);
-  ear1.position.set(0.2, 0.9, 0.46);
-  group.add(ear1);
-  const ear2 = ear1.clone();
-  ear2.position.set(-0.2, 0.9, 0.46);
-  group.add(ear2);
-
-  // Predatory glowing amber eyes
+  const tigerCoatMat = new THREE.MeshStandardMaterial({
+    color: theme === 'classic' ? 0xb45309 : 0x9a3412, // Rich dark amber bronze
+    roughness: 0.32,
+    metalness: 0.65,
+  });
+  const stripeMat = new THREE.MeshStandardMaterial({
+    color: 0x17120e, // Espresso black tiger stripes
+    roughness: 0.4,
+    metalness: 0.4,
+  });
+  const fangMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.2,
+    metalness: 0.1,
+  });
   const eyeMat = new THREE.MeshStandardMaterial({
     color: 0xf59e0b,
     emissive: 0xf59e0b,
-    emissiveIntensity: 1.0,
+    emissiveIntensity: 1.6, // Glowing predatory amber eyes
   });
-  const eye1 = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.09), eyeMat);
-  eye1.position.set(0.18, 0.72, 0.74);
-  group.add(eye1);
-  const eye2 = eye1.clone();
-  eye2.position.set(-0.18, 0.72, 0.74);
-  group.add(eye2);
 
-  // Trapped state aura
+  // 1. Double-tiered Carved Basalt / Bronze Pedestal Base
+  const base1 = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.54, 0.08, 24), baseMat);
+  base1.position.y = 0.04;
+  base1.castShadow = true;
+  base1.receiveShadow = true;
+  group.add(base1);
+
+  const base2 = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.04, 24), stripeMat);
+  base2.position.y = 0.095;
+  group.add(base2);
+
+  // 2. Muscular Low Stalking Legs & Broad Paws
+  // Front Paws
+  [-0.18, 0.18].forEach((x) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.095, 0.32, 10), tigerCoatMat);
+    leg.position.set(x, 0.24, 0.22);
+    leg.rotation.x = -0.15;
+    leg.castShadow = true;
+    group.add(leg);
+
+    const paw = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), tigerCoatMat);
+    paw.scale.set(1.2, 0.55, 1.4);
+    paw.position.set(x, 0.12, 0.28);
+    group.add(paw);
+  });
+
+  // Powerful Rear Haunches & Hind Paws
+  [-0.19, 0.19].forEach((x) => {
+    const thigh = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), tigerCoatMat);
+    thigh.scale.set(0.9, 1.2, 1.1);
+    thigh.position.set(x, 0.32, -0.18);
+    thigh.castShadow = true;
+    group.add(thigh);
+
+    const rearLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.24, 8), tigerCoatMat);
+    rearLeg.position.set(x, 0.20, -0.14);
+    rearLeg.rotation.x = 0.3;
+    group.add(rearLeg);
+
+    const rearPaw = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), tigerCoatMat);
+    rearPaw.scale.set(1.1, 0.5, 1.3);
+    rearPaw.position.set(x, 0.11, -0.16);
+    group.add(rearPaw);
+  });
+
+  // 3. Powerful Arched Predator Body (Chest, Spine, Ribcage)
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 14), tigerCoatMat);
+  chest.scale.set(1.05, 0.95, 1.3);
+  chest.position.set(0, 0.44, 0.14);
+  chest.castShadow = true;
+  group.add(chest);
+
+  const flank = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 12), tigerCoatMat);
+  flank.scale.set(0.95, 0.88, 1.2);
+  flank.position.set(0, 0.42, -0.14);
+  flank.castShadow = true;
+  group.add(flank);
+
+  // Sculpted Tiger Stripes across spine and flank
+  [-0.16, -0.06, 0.06, 0.16].forEach((z) => {
+    const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.23 - Math.abs(z) * 0.2, 0.02, 6, 16), stripeMat);
+    stripe.position.set(0, 0.46, z);
+    stripe.rotation.x = Math.PI / 2;
+    group.add(stripe);
+  });
+
+  // 4. Long S-Curved Tail Sweeping Upwards
+  const tailGroup = new THREE.Group();
+  tailGroup.position.set(0, 0.42, -0.32);
+
+  const t1 = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.24, 8), tigerCoatMat);
+  t1.position.set(0, 0.06, -0.10);
+  t1.rotation.x = -0.9;
+  tailGroup.add(t1);
+
+  const t2 = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.26, 8), tigerCoatMat);
+  t2.position.set(0.04, 0.20, -0.18);
+  t2.rotation.x = -1.7;
+  t2.rotation.y = 0.3;
+  tailGroup.add(t2);
+
+  const t3 = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.14, 8), stripeMat);
+  t3.position.set(0.08, 0.32, -0.16);
+  t3.rotation.x = -2.6;
+  tailGroup.add(t3);
+
+  group.add(tailGroup);
+
+  // 5. Powerful Sculpted Tiger Head & Snarl
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 0.58, 0.44);
+
+  // Thick muscular neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.26, 0.28, 12), tigerCoatMat);
+  neck.position.set(0, -0.08, -0.12);
+  neck.rotation.x = 0.55;
+  headGroup.add(neck);
+
+  // Skull / Cranium
+  const cranium = new THREE.Mesh(new THREE.SphereGeometry(0.20, 14, 12), tigerCoatMat);
+  cranium.scale.set(1.15, 0.95, 1.05);
+  headGroup.add(cranium);
+
+  // Cheek Fur Ruffs (flaring out from jaw)
+  [-1, 1].forEach((dir) => {
+    const ruff = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.22, 6), tigerCoatMat);
+    ruff.position.set(dir * 0.20, -0.04, -0.02);
+    ruff.rotation.z = dir * 1.2;
+    ruff.rotation.y = 0.3;
+    headGroup.add(ruff);
+  });
+
+  // Rounded Feline Ears with dark backs and white inner tufts
+  [-1, 1].forEach((dir) => {
+    const earOuter = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), stripeMat);
+    earOuter.scale.set(0.9, 1.1, 0.4);
+    earOuter.position.set(dir * 0.15, 0.16, -0.06);
+    headGroup.add(earOuter);
+
+    const earInner = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), fangMat);
+    earInner.scale.set(0.8, 1.0, 0.3);
+    earInner.position.set(dir * 0.15, 0.16, -0.04);
+    headGroup.add(earInner);
+  });
+
+  // Snout & Upper Muzzle
+  const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.13, 0.18), tigerCoatMat);
+  muzzle.position.set(0, -0.02, 0.16);
+  headGroup.add(muzzle);
+
+  // Black Nose Pad
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.05, 4), stripeMat);
+  nose.position.set(0, 0.03, 0.25);
+  nose.rotation.x = Math.PI;
+  headGroup.add(nose);
+
+  // Open Snarling Lower Jaw with Canine Fangs
+  const lowerJaw = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.16), stripeMat);
+  lowerJaw.position.set(0, -0.10, 0.14);
+  lowerJaw.rotation.x = 0.2;
+  headGroup.add(lowerJaw);
+
+  // Upper Canine Fangs
+  [
+    [-0.06, 0.16],
+    [0.06, 0.16],
+  ].forEach(([fx, fz]) => {
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.08, 6), fangMat);
+    fang.position.set(fx, -0.06, fz);
+    fang.rotation.x = Math.PI;
+    headGroup.add(fang);
+  });
+
+  // Fierce Glowing Amber Eyes with Dark Brow Ridges
+  [-1, 1].forEach((dir) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.042, 8, 8), eyeMat);
+    eye.position.set(dir * 0.11, 0.06, 0.14);
+    headGroup.add(eye);
+
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.025, 0.06), stripeMat);
+    brow.position.set(dir * 0.11, 0.09, 0.13);
+    brow.rotation.z = -dir * 0.2;
+    headGroup.add(brow);
+  });
+
+  group.add(headGroup);
+
+  // Trapped State: Intricate Crimson Runic Containment Barrier
   if (isTrapped) {
-    const auraGeo = new THREE.TorusGeometry(0.68, 0.035, 8, 32);
-    auraGeo.rotateX(Math.PI / 2);
-    const auraMat = new THREE.MeshBasicMaterial({ color: 0xef4444, wireframe: true });
-    const aura = new THREE.Mesh(auraGeo, auraMat);
-    aura.position.y = 0.12;
-    group.add(aura);
+    const auraGroup = new THREE.Group();
+    const auraRing1 = new THREE.Mesh(
+      new THREE.TorusGeometry(0.66, 0.025, 8, 36),
+      new THREE.MeshBasicMaterial({ color: 0xef4444, wireframe: true })
+    );
+    auraRing1.rotation.x = Math.PI / 2;
+    auraRing1.position.y = 0.14;
+    auraGroup.add(auraRing1);
+
+    const auraRing2 = new THREE.Mesh(
+      new THREE.TorusGeometry(0.56, 0.02, 6, 24),
+      new THREE.MeshBasicMaterial({ color: 0xf87171, transparent: true, opacity: 0.75 })
+    );
+    auraRing2.rotation.x = Math.PI / 2;
+    auraRing2.position.y = 0.32;
+    auraGroup.add(auraRing2);
+
+    group.add(auraGroup);
   }
 
   return group;
 }
 
+/* --- SCULPTED HIMALAYAN MOUNTAIN GOAT (Proud Capra / Ibex Figurine) --- */
+
 function createGoatMesh(theme: BoardTheme = 'stone') {
   const group = new THREE.Group();
 
-  // Goat Material: Sculpted Himalayan White Marble / River Stone
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0xf8fafc,
-    roughness: 0.28,
-    metalness: 0.1,
+  // Turned Himalayan Marble Pedestal & Horn Materials
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0x222630,
+    roughness: 0.35,
+    metalness: 0.25,
   });
-
-  // Chiseled Circular Pedestal Base
-  const baseGeo = new THREE.CylinderGeometry(0.42, 0.46, 0.1, 16);
-  const baseMesh = new THREE.Mesh(baseGeo, bodyMat);
-  baseMesh.position.y = 0.05;
-  baseMesh.castShadow = true;
-  group.add(baseMesh);
-
-  // Sleek sculpted body
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.44, 0.72, 12), bodyMat);
-  body.position.y = 0.38;
-  body.rotation.z = Math.PI / 2;
-  body.castShadow = true;
-  group.add(body);
-
-  // Mountain goat head
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.36, 0.4), bodyMat);
-  head.position.set(0, 0.68, 0.46);
-  head.castShadow = true;
-  group.add(head);
-
-  // Curved dark slate horns
+  const marbleMat = new THREE.MeshStandardMaterial({
+    color: 0xfafafa,
+    roughness: 0.22,
+    metalness: 0.08,
+  });
   const hornMat = new THREE.MeshStandardMaterial({
-    color: theme === 'cathedral3d' ? 0x94a3b8 : 0x334155,
-    roughness: 0.38,
-    metalness: 0.45,
+    color: theme === 'cathedral3d' ? 0x94a3b8 : 0x1e293b,
+    roughness: 0.32,
+    metalness: 0.5,
   });
-  const horn1 = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.46, 8), hornMat);
-  horn1.position.set(0.12, 0.94, 0.36);
-  horn1.rotation.x = -0.32;
-  horn1.castShadow = true;
-  group.add(horn1);
+  const hoofMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    roughness: 0.5,
+    metalness: 0.2,
+  });
+  const eyeMat = new THREE.MeshStandardMaterial({
+    color: 0x09090b,
+    roughness: 0.1,
+    metalness: 0.9,
+  });
 
-  const horn2 = horn1.clone();
-  horn2.position.set(-0.12, 0.94, 0.36);
-  group.add(horn2);
+  // 1. Turned Pedestal Plinth
+  const base1 = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.08, 24), baseMat);
+  base1.position.y = 0.04;
+  base1.castShadow = true;
+  base1.receiveShadow = true;
+  group.add(base1);
+
+  const base2 = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.40, 0.05, 24), marbleMat);
+  base2.position.y = 0.095;
+  base2.castShadow = true;
+  group.add(base2);
+
+  // 2. Four Carved Legs with Hooves (Standing proudly on pedestal)
+  const legPositions: [number, number][] = [
+    [-0.14, 0.20],  // front-left
+    [0.14, 0.20],   // front-right
+    [-0.15, -0.22], // rear-left
+    [0.15, -0.22],  // rear-right
+  ];
+  legPositions.forEach(([x, z]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.36, 8), marbleMat);
+    leg.position.set(x, 0.28, z);
+    leg.castShadow = true;
+    group.add(leg);
+
+    const hoof = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.06, 8), hoofMat);
+    hoof.position.set(x, 0.13, z);
+    group.add(hoof);
+  });
+
+  // 3. Upright Athletic Body (Chest, Torso, Flank)
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 14), marbleMat);
+  chest.scale.set(0.9, 1.1, 1.2);
+  chest.position.set(0, 0.52, 0.10);
+  chest.castShadow = true;
+  group.add(chest);
+
+  const rear = new THREE.Mesh(new THREE.SphereGeometry(0.21, 14, 12), marbleMat);
+  rear.scale.set(0.85, 1.0, 1.0);
+  rear.position.set(0, 0.50, -0.18);
+  rear.castShadow = true;
+  group.add(rear);
+
+  // Short Goat Tail pointing up
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 8), marbleMat);
+  tail.position.set(0, 0.58, -0.34);
+  tail.rotation.x = -0.7;
+  group.add(tail);
+
+  // 4. Graceful Arched Neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.38, 12), marbleMat);
+  neck.position.set(0, 0.76, 0.22);
+  neck.rotation.x = 0.35;
+  neck.castShadow = true;
+  group.add(neck);
+
+  // 5. Sculpted Mountain Goat Head
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 0.94, 0.32);
+
+  // Cranium
+  const cranium = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), marbleMat);
+  cranium.scale.set(0.9, 1.0, 1.1);
+  headGroup.add(cranium);
+
+  // Tapered Muzzle / Snout
+  const muzzle = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.28, 10), marbleMat);
+  muzzle.rotation.x = -1.35;
+  muzzle.position.set(0, -0.06, 0.14);
+  headGroup.add(muzzle);
+
+  // Black Nose tip
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), hoofMat);
+  nose.position.set(0, -0.16, 0.24);
+  headGroup.add(nose);
+
+  // Iconic Chin Beard / Goatee (Distinctively Caprine)
+  const beard = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 6), marbleMat);
+  beard.position.set(0, -0.24, 0.16);
+  beard.rotation.x = -0.4;
+  headGroup.add(beard);
+
+  // Two Drooping / Alert Ears
+  [-1, 1].forEach((dir) => {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.16, 6), marbleMat);
+    ear.position.set(dir * 0.13, 0.04, -0.02);
+    ear.rotation.z = -dir * 1.0;
+    ear.rotation.x = -0.2;
+    headGroup.add(ear);
+  });
+
+  // Eyes
+  [-1, 1].forEach((dir) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), eyeMat);
+    eye.position.set(dir * 0.11, 0.02, 0.08);
+    headGroup.add(eye);
+  });
+
+  // 6. Magnificent Backward-Arching Mountain Ibex Horns
+  [-1, 1].forEach((dir) => {
+    const hornGroup = new THREE.Group();
+    hornGroup.position.set(dir * 0.08, 0.10, -0.02);
+
+    // Segment 1 (Rising up and slight out)
+    const s1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.18, 8), hornMat);
+    s1.position.set(0, 0.09, 0);
+    s1.rotation.z = -dir * 0.25;
+    s1.rotation.x = -0.3;
+    hornGroup.add(s1);
+
+    // Segment 2 (Arching backwards)
+    const s2 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.20, 8), hornMat);
+    s2.position.set(dir * 0.02, 0.24, -0.07);
+    s2.rotation.z = -dir * 0.2;
+    s2.rotation.x = -0.9;
+    hornGroup.add(s2);
+
+    // Segment 3 (Sweeping down and tapering to sharp tip)
+    const s3 = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.22, 8), hornMat);
+    s3.position.set(dir * 0.03, 0.30, -0.22);
+    s3.rotation.z = -dir * 0.15;
+    s3.rotation.x = -1.6;
+    hornGroup.add(s3);
+
+    // Ribbed ridges on the horns
+    [0.05, 0.12, 0.20].forEach((h) => {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.048, 0.012, 6, 12), hornMat);
+      ring.position.set(0, h, -h * 0.35);
+      ring.rotation.x = Math.PI / 3;
+      hornGroup.add(ring);
+    });
+
+    headGroup.add(hornGroup);
+  });
+
+  group.add(headGroup);
 
   return group;
 }
