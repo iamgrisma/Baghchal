@@ -56,8 +56,9 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
-    const width = container.clientWidth || window.innerWidth;
-    const height = container.clientHeight || window.innerHeight;
+    const rect = container.getBoundingClientRect();
+    const width = Math.max(Math.round(rect.width || container.clientWidth || 360), 100);
+    const height = Math.max(Math.round(rect.height || container.clientHeight || 360), 100);
 
     // 1. Scene setup
     const scene = new THREE.Scene();
@@ -81,9 +82,12 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
     // 3. Renderer setup
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    renderer.domElement.style.display = 'block';
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -178,19 +182,30 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
     };
     animate(performance.now());
 
-    // Resize handler
-    const handleResize = () => {
+    // Resize observer & handler for fluid responsiveness
+    const updateSize = () => {
       if (!containerRef.current || !rendererRef.current || !cameraRef.current) return;
-      const w = containerRef.current.clientWidth;
-      const h = containerRef.current.clientHeight;
+      const r = containerRef.current.getBoundingClientRect();
+      const w = Math.max(Math.round(r.width || containerRef.current.clientWidth || 360), 100);
+      const h = Math.max(Math.round(r.height || containerRef.current.clientHeight || 360), 100);
       cameraRef.current.aspect = w / h;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
     };
-    window.addEventListener('resize', handleResize);
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => updateSize())
+      : null;
+    if (resizeObserver) {
+      resizeObserver.observe(container);
+    }
+    window.addEventListener('resize', updateSize);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', updateSize);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       domEl.removeEventListener('pointerdown', handlePointerDown);
       cancelAnimationFrame(animationFrameId);
       envCleanup();
@@ -316,40 +331,50 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center select-none overflow-hidden rounded-2xl border border-stone-800 bg-stone-950">
-      <div ref={containerRef} className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing" />
+    <div
+      className="relative w-full aspect-square mx-auto touch-none select-none flex items-center justify-center p-1 sm:p-2"
+      style={{
+        maxWidth: 'min(94vw, calc(100dvh - 160px), 440px)',
+        maxHeight: 'min(94vw, calc(100dvh - 160px), 440px)',
+        width: 'min(94vw, calc(100dvh - 160px), 440px)',
+        height: 'min(94vw, calc(100dvh - 160px), 440px)',
+      }}
+    >
+      <div className="relative w-full h-full rounded-3xl overflow-hidden shadow-2xl border-2 border-stone-800/80 bg-stone-950 flex items-center justify-center">
+        <div ref={containerRef} className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing touch-none" />
 
-      {/* Floating Camera View Toggle HUD */}
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 bg-stone-900/90 backdrop-blur-md p-1 rounded-xl border border-stone-750 shadow-xl">
-        <button
-          onClick={() => handleCameraChange('cinematic')}
-          className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-            cameraView === 'cinematic'
-              ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
-              : 'text-stone-300 hover:text-white'
-          }`}
-        >
-          Cinematic
-        </button>
-        <button
-          onClick={() => handleCameraChange('top')}
-          className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-            cameraView === 'top'
-              ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
-              : 'text-stone-300 hover:text-white'
-          }`}
-        >
-          Top-Down
-        </button>
-      </div>
-
-      {/* AI Thinking Floating Badge */}
-      {isAiThinking && (
-        <div className="absolute top-3 left-3 z-20 px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-2 backdrop-blur-md animate-pulse">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-          <span>AI computing strategic move...</span>
+        {/* Floating Camera View Toggle HUD */}
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 bg-stone-900/90 backdrop-blur-md p-1 rounded-xl border border-stone-750 shadow-xl">
+          <button
+            onClick={() => handleCameraChange('cinematic')}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+              cameraView === 'cinematic'
+                ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
+                : 'text-stone-300 hover:text-white'
+            }`}
+          >
+            Cinematic
+          </button>
+          <button
+            onClick={() => handleCameraChange('top')}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+              cameraView === 'top'
+                ? 'bg-amber-500 text-stone-950 font-bold shadow-sm'
+                : 'text-stone-300 hover:text-white'
+            }`}
+          >
+            Top-Down
+          </button>
         </div>
-      )}
+
+        {/* AI Thinking Floating Badge */}
+        {isAiThinking && (
+          <div className="absolute top-3 left-3 z-20 px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-2 backdrop-blur-md animate-pulse">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+            <span>AI computing strategic move...</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

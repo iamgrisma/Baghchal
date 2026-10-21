@@ -1043,7 +1043,7 @@ export default function App() {
 
         {/* Board Component */}
         <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
-          {boardDimension === '3d' || boardTheme === 'cathedral3d' ? (
+          {boardDimension === '3d' ? (
             <ThreeBaghchalBoard
               board={gameState.board}
               turn={gameState.turn}
