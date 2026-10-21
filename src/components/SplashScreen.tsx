@@ -130,8 +130,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
         {/* 2. BOARD PERSPECTIVE SELECTOR (2D vs 3D) */}
         <div className="w-full bg-stone-900/70 border border-stone-800 rounded-2xl p-2.5 space-y-1.5 shadow-md">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-stone-400 text-left px-1">
-            2. Choose Perspective
+          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-stone-400 px-1">
+            <span>2. Choose Perspective</span>
+            <span className="text-[10px] text-amber-400/90 font-medium lowercase">cross-compatible in multiplayer</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button

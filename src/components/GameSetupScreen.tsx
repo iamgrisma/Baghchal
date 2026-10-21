@@ -326,8 +326,9 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
         {/* Section 5: Board Perspective (2D vs 3D) */}
         {onSelectDimension && (
           <section className="space-y-2">
-            <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 px-0.5">
-              Board Perspective
+            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-stone-400 px-0.5">
+              <span>Board Perspective</span>
+              <span className="text-[10px] text-amber-400/90 font-medium lowercase">play 2D vs 3D freely</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button

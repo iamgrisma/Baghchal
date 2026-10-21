@@ -229,6 +229,9 @@ export const OnlineLobbyModal: React.FC<OnlineLobbyModalProps> = ({
                   </div>
                   <span className="text-[11px] text-emerald-400 font-medium">Free Global Queue</span>
                 </div>
+                <p className="text-[11px] text-stone-400">
+                  Cross-Play Enabled: You can view in 2D or 3D freely, even if your opponent uses a different view.
+                </p>
 
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-stone-400">Role:</span>

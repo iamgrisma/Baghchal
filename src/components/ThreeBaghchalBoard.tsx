@@ -127,6 +127,25 @@ export const ThreeBaghchalBoard: React.FC<ThreeBaghchalBoardProps> = ({
           }
           break;
         }
+
+        // Tap proximity fallback for clicks on the board plate
+        if (hit.point) {
+          const c = Math.round(hit.point.x / 1.8) + 2;
+          const r = Math.round(hit.point.z / 1.8) + 2;
+          if (c >= 0 && c <= 4 && r >= 0 && r <= 4) {
+            const nodeX = (c - 2) * 1.8;
+            const nodeZ = (r - 2) * 1.8;
+            const dist = Math.hypot(hit.point.x - nodeX, hit.point.z - nodeZ);
+            if (dist <= 0.88) {
+              const idx = r * 5 + c;
+              const { isInteractive, onNodeClick } = propsRef.current;
+              if (isInteractive) {
+                onNodeClick(idx);
+              }
+              break;
+            }
+          }
+        }
       }
     };
 
@@ -819,8 +838,8 @@ function buildBaghchalBoard3D(
   const innerPitMat = new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.95 });
 
   // Generous invisible hit-sphere for mobile touch detection
-  const hitGeo = new THREE.SphereGeometry(0.68, 8, 8);
-  const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+  const hitGeo = new THREE.SphereGeometry(0.72, 8, 8);
+  const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
 
   for (let r = 0; r < 5; r++) {
     for (let c = 0; c < 5; c++) {
