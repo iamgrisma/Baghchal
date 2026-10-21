@@ -14,6 +14,11 @@ import {
   Flag,
   AlertTriangle,
   Shield,
+  Bot,
+  Globe,
+  Users,
+  Box,
+  Layers,
 } from 'lucide-react';
 import { BoardTheme, BoardDimension, GameMode } from '../types';
 
@@ -21,6 +26,7 @@ interface SideDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   mode: GameMode;
+  onSelectMode?: (mode: GameMode) => void;
   canUndo: boolean;
   onUndo: () => void;
   onRestart: () => void;
@@ -43,6 +49,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   isOpen,
   onClose,
   mode,
+  onSelectMode,
   canUndo,
   onUndo,
   onRestart,
@@ -95,6 +102,62 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
 
         {/* Navigation Sections */}
         <div className="flex-1 overflow-y-auto py-3 space-y-4">
+          {/* Game Mode Selector */}
+          {onSelectMode && (
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-semibold tracking-wider text-stone-400 uppercase px-1">
+                Game Mode
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  onClick={() => {
+                    onSelectMode('ai');
+                    onClose();
+                  }}
+                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-[11px] font-bold transition ${
+                    mode === 'ai'
+                      ? 'bg-amber-500 text-stone-950 border-amber-400 font-black shadow-sm'
+                      : 'bg-stone-900 border-stone-800 text-stone-300 hover:text-white'
+                  }`}
+                >
+                  <Bot className="w-3.5 h-3.5 mb-0.5" />
+                  <span>VS AI</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    onSelectMode('online');
+                    onClose();
+                    onOpenOnlineLobby();
+                  }}
+                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-[11px] font-bold transition ${
+                    mode === 'online'
+                      ? 'bg-amber-500 text-stone-950 border-amber-400 font-black shadow-sm'
+                      : 'bg-stone-900 border-stone-800 text-stone-300 hover:text-white'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5 mb-0.5" />
+                  <span>Online</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    onSelectMode('local');
+                    onClose();
+                  }}
+                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-[11px] font-bold transition ${
+                    mode === 'local'
+                      ? 'bg-amber-500 text-stone-950 border-amber-400 font-black shadow-sm'
+                      : 'bg-stone-900 border-stone-800 text-stone-300 hover:text-white'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5 mb-0.5" />
+                  <span>Pass&Play</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Match Actions */}
           <div className="space-y-1.5">
             <div className="text-[10px] font-semibold tracking-wider text-stone-400 uppercase px-1">
@@ -237,7 +300,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                         : 'bg-stone-850 text-stone-400 border-stone-750 hover:text-stone-200'
                     }`}
                   >
-                    {theme === 'cathedral3d' ? '3D Gothic' : theme === 'stone' ? 'Stone' : theme}
+                    {theme === 'cathedral3d' ? 'Cathedral 3D' : theme === 'stone' ? 'Engraved Stone' : theme === 'slate' ? 'Highland Slate' : theme === 'classic' ? 'Woodland' : 'Obsidian'}
                   </button>
                 ))}
               </div>

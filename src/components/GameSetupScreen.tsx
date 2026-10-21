@@ -323,46 +323,58 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
           </div>
         </section>
 
-        {/* Section 5: Board Theme & Dimension */}
-        <section className="space-y-3">
+        {/* Section 5: Board Perspective (2D vs 3D) */}
+        {onSelectDimension && (
+          <section className="space-y-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-stone-400 px-0.5">
+              Board Perspective
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onSelectDimension('2d')}
+                className={`flex items-center justify-center gap-2.5 py-3 px-3 rounded-2xl border text-xs font-bold transition ${
+                  boardDimension === '2d'
+                    ? 'bg-amber-500 text-stone-950 border-amber-400 shadow-sm'
+                    : 'bg-stone-900/60 border-stone-800 text-stone-400 hover:text-white hover:bg-stone-850'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                <span>2D Tactical Board</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectDimension('3d')}
+                className={`flex items-center justify-center gap-2.5 py-3 px-3 rounded-2xl border text-xs font-bold transition ${
+                  boardDimension === '3d'
+                    ? 'bg-amber-500 text-stone-950 border-amber-400 shadow-sm'
+                    : 'bg-stone-900/60 border-stone-800 text-stone-400 hover:text-white hover:bg-stone-850'
+                }`}
+              >
+                <Box className="w-4 h-4" />
+                <span>3D WebGL Map</span>
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Section 6: Board Map & Theme */}
+        <section className="space-y-2">
           <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-stone-400 px-0.5">
-            <span>Board Theme</span>
-            {onSelectDimension && (
-              <div className="flex items-center gap-1 bg-stone-900 p-0.5 rounded-lg border border-stone-800">
-                <button
-                  type="button"
-                  onClick={() => onSelectDimension('2d')}
-                  className={`px-2 py-0.5 text-[11px] font-bold rounded-md transition ${
-                    boardDimension === '2d'
-                      ? 'bg-amber-500 text-stone-950 shadow-sm'
-                      : 'text-stone-400 hover:text-stone-200'
-                  }`}
-                >
-                  2D
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectDimension('3d')}
-                  className={`px-2 py-0.5 text-[11px] font-bold rounded-md transition ${
-                    boardDimension === '3d'
-                      ? 'bg-amber-500 text-stone-950 shadow-sm'
-                      : 'text-stone-400 hover:text-stone-200'
-                  }`}
-                >
-                  3D
-                </button>
-              </div>
+            <span>3D Map & Board Theme</span>
+            {boardTheme === 'stone' && (
+              <span className="text-[10px] text-amber-400 font-semibold lowercase">engraved stone active</span>
             )}
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[
-              { id: 'stone', label: 'Stone (Engraved)', color: 'bg-stone-300', border: 'border-stone-400' },
-              { id: 'cathedral3d', label: 'Cathedral 3D', color: 'bg-violet-400', border: 'border-violet-500' },
-              { id: 'slate', label: 'Highland', color: 'bg-cyan-400', border: 'border-cyan-400' },
-              { id: 'classic', label: 'Woodland', color: 'bg-amber-500', border: 'border-amber-500' },
-              { id: 'midnight', label: 'Obsidian', color: 'bg-purple-400', border: 'border-purple-400' },
-            ].map(({ id, label, color, border }) => {
+              { id: 'stone', label: 'Stone (Engraved)', desc: 'Chiseled Stone', color: 'bg-stone-300', border: 'border-stone-400' },
+              { id: 'cathedral3d', label: 'Cathedral 3D', desc: 'Gothic Sanctuary', color: 'bg-violet-400', border: 'border-violet-500', force3d: true },
+              { id: 'slate', label: 'Highland', desc: 'Alpine Slate', color: 'bg-cyan-400', border: 'border-cyan-400' },
+              { id: 'classic', label: 'Woodland', desc: 'Carved Walnut', color: 'bg-amber-500', border: 'border-amber-500' },
+              { id: 'midnight', label: 'Obsidian', desc: 'Neon Runic', color: 'bg-purple-400', border: 'border-purple-400' },
+            ].map(({ id, label, desc, color, border, force3d }) => {
               const isSelected = boardTheme === id;
               return (
                 <button
@@ -370,7 +382,7 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
                   type="button"
                   onClick={() => {
                     onSelectTheme(id as BoardTheme);
-                    if (id === 'cathedral3d' && onSelectDimension) {
+                    if (force3d && onSelectDimension) {
                       onSelectDimension('3d');
                     }
                   }}
@@ -382,6 +394,7 @@ export const GameSetupScreen: React.FC<GameSetupScreenProps> = ({
                 >
                   <div className={`w-3.5 h-3.5 rounded-full ${color} mb-1 shadow-sm`} />
                   <span className="font-semibold text-stone-200 text-center leading-tight text-[11px]">{label}</span>
+                  <span className="text-[9px] text-stone-400 mt-0.5">{desc}</span>
                 </button>
               );
             })}

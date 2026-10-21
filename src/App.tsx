@@ -667,7 +667,24 @@ export default function App() {
     return (
       <>
         <SplashScreen
-          onStartClick={() => setCurrentScreen('setup')}
+          mode={mode}
+          onSelectMode={(m) => {
+            if (mode === 'online' && m !== 'online') cleanupConnection();
+            setMode(m);
+            resetGame();
+          }}
+          boardDimension={boardDimension}
+          onSelectDimension={handleSelectDimension}
+          boardTheme={boardTheme}
+          onSelectTheme={setBoardTheme}
+          onStartClick={() => {
+            resetGame();
+            if (mode === 'online') {
+              setShowOnlineLobby(true);
+            }
+            setCurrentScreen('play');
+          }}
+          onConfigureClick={() => setCurrentScreen('setup')}
           onOpenRules={() => setShowRules(true)}
           onOpenProfile={() => setShowProfile(true)}
           isTelegram={isTelegram}
@@ -957,35 +974,104 @@ export default function App() {
       )}
 
       {/* 2. THE CLEAN GAME ARENA */}
-      <section className="flex-1 flex items-center justify-center w-full max-w-lg mx-auto overflow-hidden p-1">
-        {boardDimension === '3d' || boardTheme === 'cathedral3d' ? (
-          <ThreeBaghchalBoard
-            board={gameState.board}
-            turn={gameState.turn}
-            phase={gameState.phase}
-            goatsInReserve={gameState.goatsInReserve}
-            selectedPos={selectedPos}
-            validMoves={validMoves}
-            lastMove={gameState.lastMove}
-            isInteractive={isUserTurn()}
-            onNodeClick={handleNodeClick}
-            isAiThinking={isAiThinking}
-            theme={boardTheme}
-          />
-        ) : (
-          <BaghchalBoard
-            board={gameState.board}
-            turn={gameState.turn}
-            phase={gameState.phase}
-            goatsInReserve={gameState.goatsInReserve}
-            selectedPos={selectedPos}
-            validMoves={validMoves}
-            lastMove={gameState.lastMove}
-            isInteractive={isUserTurn()}
-            onNodeClick={handleNodeClick}
-            theme={boardTheme}
-          />
-        )}
+      <section className="flex-1 flex flex-col items-center justify-between w-full max-w-lg mx-auto overflow-hidden p-1">
+        {/* Quick Interactive HUD Bar: Mode, Maps & 2D/3D Perspective */}
+        <div className="w-full flex items-center justify-between px-2 pt-1 pb-1 shrink-0 z-20">
+          {/* Mode Pill */}
+          <button
+            onClick={() => setCurrentScreen('setup')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-stone-900 border border-stone-800 text-[11px] font-bold text-stone-300 hover:text-white transition active:scale-95 shadow-sm"
+            title="Change Game Mode"
+          >
+            <span className="text-[10px] uppercase tracking-wider text-stone-400">Mode:</span>
+            <span className="text-amber-400 font-extrabold">
+              {mode === 'ai' ? 'VS AI' : mode === 'online' ? 'Online' : 'Local'}
+            </span>
+          </button>
+
+          {/* Map / Theme Switcher Pills */}
+          <div className="flex items-center gap-1 bg-stone-900/90 p-0.5 rounded-xl border border-stone-800">
+            <button
+              onClick={() => setBoardTheme('stone')}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                boardTheme === 'stone'
+                  ? 'bg-amber-500 text-stone-950 font-black shadow-sm'
+                  : 'text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              Stone (Engraved)
+            </button>
+            <button
+              onClick={() => {
+                setBoardTheme('cathedral3d');
+                handleSelectDimension('3d');
+              }}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                boardTheme === 'cathedral3d'
+                  ? 'bg-amber-500 text-stone-950 font-black shadow-sm'
+                  : 'text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              Cathedral 3D
+            </button>
+          </div>
+
+          {/* Perspective 2D/3D Pill */}
+          <div className="flex items-center gap-0.5 bg-stone-900/90 p-0.5 rounded-xl border border-stone-800">
+            <button
+              onClick={() => handleSelectDimension('2d')}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                boardDimension === '2d'
+                  ? 'bg-amber-500 text-stone-950 font-black shadow-sm'
+                  : 'text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              2D
+            </button>
+            <button
+              onClick={() => handleSelectDimension('3d')}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                boardDimension === '3d'
+                  ? 'bg-amber-500 text-stone-950 font-black shadow-sm'
+                  : 'text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              3D
+            </button>
+          </div>
+        </div>
+
+        {/* Board Component */}
+        <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
+          {boardDimension === '3d' || boardTheme === 'cathedral3d' ? (
+            <ThreeBaghchalBoard
+              board={gameState.board}
+              turn={gameState.turn}
+              phase={gameState.phase}
+              goatsInReserve={gameState.goatsInReserve}
+              selectedPos={selectedPos}
+              validMoves={validMoves}
+              lastMove={gameState.lastMove}
+              isInteractive={isUserTurn()}
+              onNodeClick={handleNodeClick}
+              isAiThinking={isAiThinking}
+              theme={boardTheme}
+            />
+          ) : (
+            <BaghchalBoard
+              board={gameState.board}
+              turn={gameState.turn}
+              phase={gameState.phase}
+              goatsInReserve={gameState.goatsInReserve}
+              selectedPos={selectedPos}
+              validMoves={validMoves}
+              lastMove={gameState.lastMove}
+              isInteractive={isUserTurn()}
+              onNodeClick={handleNodeClick}
+              theme={boardTheme}
+            />
+          )}
+        </div>
       </section>
 
       {/* 3. BOTTOM APP BAR: Player Card + Quick Undo Floating Button */}
@@ -1059,6 +1145,11 @@ export default function App() {
         isOpen={showSideMenu}
         onClose={() => setShowSideMenu(false)}
         mode={mode}
+        onSelectMode={(m) => {
+          if (mode === 'online' && m !== 'online') cleanupConnection();
+          setMode(m);
+          resetGame();
+        }}
         canUndo={historyStack.length > 0 && mode !== 'online' && !isAiThinking}
         onUndo={handleUndo}
         onRestart={resetGame}
